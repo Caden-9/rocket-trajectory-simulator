@@ -4,8 +4,19 @@
 #include <SFML/Window.hpp>
 using namespace sf;
 
+//Functions
+void update_numbers();
+
+//Constants
+constexpr float PIXELS_PER_METER = 5;
+constexpr float GRAVITY = -9.81;
+constexpr float FORCE = 400;
+constexpr float MASS = 10;
+
 //Flight information
-float x = 0, x_old, y = 0, y_old, v = 1000, a = -500, dt = 1.f/60.f;
+float x = 0, x_old, y = 0, y_old,
+      v = 0, a_thrust = FORCE/MASS, a_tot,
+      dt = 1.f/60.f, t = 0;
 
 int main()
 {
@@ -27,11 +38,7 @@ int main()
         }
 
         //Update position
-        x_old = x;
-        y_old = y;
-        y += v*dt;
-        v += a*dt;
-        x += 250.f*dt;
+        update_numbers();
 
             //Draw Screen
         //Draw new
@@ -45,4 +52,24 @@ int main()
         window.display();
     }
     return 0;
+}
+
+void update_numbers()
+{
+    //New time
+    t += dt;
+
+    //Save old positions
+    x_old = x;
+    y_old = y;
+
+    //Get current acceleration and velocity
+    if (t < 1.5)
+        a_tot = a_thrust + GRAVITY;
+    else
+        a_tot = GRAVITY;
+
+    v += a_tot * dt;
+    y += v * dt * PIXELS_PER_METER;
+    x += 10.f * dt * PIXELS_PER_METER;
 }
