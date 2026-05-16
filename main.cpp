@@ -1,4 +1,6 @@
 #include <iostream>
+#include <cmath>
+
 #include <SFML/Graphics.hpp>
 #include <SFML/System.hpp>
 #include <SFML/Window.hpp>
@@ -12,11 +14,14 @@ constexpr float PIXELS_PER_METER = 5;
 constexpr float GRAVITY = -9.81;
 constexpr float FORCE = 400;
 constexpr float MASS = 10;
+constexpr float PI = 3.14159265f;
 
 //Flight information
 float x = 0, x_old, y = 0, y_old,
-      v = 0, a_thrust = FORCE/MASS, a_tot,
-      dt = 1.f/60.f, t = 0;
+      vx = 0, vy = 0,
+      a_thrust = FORCE/MASS, ax_tot, ay_tot,
+      dt = 1.f/60.f, t = 0,
+      launch_angle = 85 * PI / 180;
 
 int main()
 {
@@ -65,11 +70,18 @@ void update_numbers()
 
     //Get current acceleration and velocity
     if (t < 1.5)
-        a_tot = a_thrust + GRAVITY;
+    {
+        ay_tot = a_thrust * sin(launch_angle) + GRAVITY;
+        ax_tot = a_thrust * cos(launch_angle);
+    }
     else
-        a_tot = GRAVITY;
+    {
+        ay_tot = GRAVITY;
+        ax_tot = 0;
+    }
 
-    v += a_tot * dt;
-    y += v * dt * PIXELS_PER_METER;
-    x += 10.f * dt * PIXELS_PER_METER;
+    vx += ax_tot * dt;
+    vy += ay_tot * dt;
+    y += vy * dt * PIXELS_PER_METER;
+    x += vx * dt * PIXELS_PER_METER;
 }
