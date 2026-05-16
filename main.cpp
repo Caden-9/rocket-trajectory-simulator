@@ -20,6 +20,9 @@ constexpr float PI = 3.14159265f;
 constexpr float THRUST_TIME = 1.5;
 constexpr float ORIGIN = 50;
 
+//Path points for graph
+VertexArray path(PrimitiveType::LineStrip);
+
 //Flight information
 float x = 0, x_old, y = 0, y_old,
       vx = 0, vy = 0,
@@ -29,12 +32,14 @@ float x = 0, x_old, y = 0, y_old,
 
 int main()
 {
-    //Window
+    //Initialize Window
     RenderWindow window(VideoMode({1920, 1080}), "RTS", Style::Titlebar | Style::Close);
     window.setFramerateLimit(60);
-    //Draw black screen
     window.clear(Color::Black);
-    
+
+    //Add origin to path line
+    path.append(Vertex{{ORIGIN, 1080 - ORIGIN}, Color::Red});
+
     //Simulator Loop
     while(window.isOpen())
     {
@@ -46,6 +51,8 @@ int main()
                 window.close();
         }
 
+        if (y >= 0)
+        {
         //Update position
         update_numbers();
 
@@ -55,6 +62,7 @@ int main()
 
         //Display new
         window.display();
+        }
     }
     return 0;
 }
@@ -90,19 +98,13 @@ void draw_line(RenderWindow& window)
 {
     if (t <= THRUST_TIME)
         {
-            Vertex line[] = {
-                Vertex{{x_old * PIXELS_PER_METER + ORIGIN, 1080.f - y_old * PIXELS_PER_METER - ORIGIN}, Color::Cyan},
-                Vertex{{x * PIXELS_PER_METER + ORIGIN, 1080.f - y * PIXELS_PER_METER - ORIGIN}, Color::Cyan}
-            };
-        window.draw(line, 2, sf::PrimitiveType::Lines);
+            path.append(Vertex{{x * PIXELS_PER_METER + ORIGIN, 1080.f - y * PIXELS_PER_METER - ORIGIN}, Color::Green});
+            window.draw(path);
         }
-        if (t >= THRUST_TIME)
+        if (t > THRUST_TIME)
         {
-            Vertex line[] = {
-                Vertex{{x_old * PIXELS_PER_METER + ORIGIN, 1080.f - y_old * PIXELS_PER_METER - ORIGIN}, Color::Red},
-                Vertex{{x * PIXELS_PER_METER + ORIGIN, 1080.f - y * PIXELS_PER_METER - ORIGIN}, Color::Red}
-            };
-        window.draw(line, 2, sf::PrimitiveType::Lines);
+            path.append(Vertex{{x * PIXELS_PER_METER + ORIGIN, 1080.f - y * PIXELS_PER_METER - ORIGIN}, Color::Red});
+            window.draw(path);
         }
 }
 
