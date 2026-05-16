@@ -1,20 +1,36 @@
+#include <iostream>
 #include <SFML/Graphics.hpp>
+#include <SFML/System.hpp>
+#include <SFML/Window.hpp>
+using namespace sf;
 
 int main()
 {
-    sf::RenderWindow window(sf::VideoMode({800, 600}), "Rocket Simulator");
+    //Window
+    RenderWindow window(VideoMode({2000, 1500}), "RTS", Style::Titlebar | Style::Close);
 
-    while (window.isOpen())
+    //Simulator Loop
+    while(window.isOpen())
     {
-        while (auto event = window.pollEvent())
+        //Check if closed
+        while(const std::optional event = window.pollEvent())
         {
-            if (event->is<sf::Event::Closed>())
+            //Close with button and esc
+            if (event->is<Event::Closed>())
                 window.close();
         }
 
-        window.clear();
+        //Update state
+        
+
+        //Draw Screen
+
+        window.clear(Color::Black); //Clear old
+        //Draw new
+
+
+        //Display new
         window.display();
     }
-
     return 0;
 }
