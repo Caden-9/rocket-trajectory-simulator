@@ -1,5 +1,7 @@
 #include <iostream>
 #include <cmath>
+#include <sstream>
+#include <iomanip>
 
 #include <SFML/Graphics.hpp>
 #include <SFML/System.hpp>
@@ -9,10 +11,11 @@ using namespace sf;
 //Functions
 void menu(RenderWindow& window);
 void simulator(RenderWindow& window);
+void calculate_bounds();
 void update_numbers();
-void draw_line(RenderWindow& window);
-void draw_graph(RenderWindow& window);
-void draw_state(RenderWindow& window, Text& distance, Text& height, Text& velocity, Text& acceleration);
+void draw_path(RenderWindow& window);
+void draw_graph(RenderWindow& window, RectangleShape& x_axis, RectangleShape& y_axis, RectangleShape& ticks);
+void draw_state(RenderWindow& window, Text& time, Text& distance, Text& height, Text& velocity, Text& acceleration);
 void draw_vectors(RenderWindow& window);
 
 //Constants
@@ -33,7 +36,8 @@ float x = 0, x_old, y = 0.0000000000000000001, y_old,
       vx = 0, vy = 0, v,
       a_thrust = FORCE/MASS, ax, ay, a,
       dt = 1.f/60.f, t = 0,
-      launch_angle = 60 * PI / 180;
+      launch_angle = 60 * PI / 180,
+      time_ground;
 
 Vertex v_arrow[2], a_arrow[2];
 
@@ -80,26 +84,35 @@ void simulator(RenderWindow& window)
             std::cout << "Failed to load font\n";
         }
 
+    Text time(font);
+    time.setCharacterSize(40);
+    time.setPosition({1500.f, 50.f});
     Text distance(font);
     distance.setCharacterSize(40);
-    distance.setPosition({1500.f, 50.f});
+    distance.setPosition({1500.f, 110.f});
     Text height(font);
     height.setCharacterSize(40);
-    height.setPosition({1500.f, 110.f});
+    height.setPosition({1500.f, 170.f});
     Text velocity(font);
     velocity.setCharacterSize(40);
-    velocity.setPosition({1500.f, 170.f});
+    velocity.setPosition({1500.f, 230.f});
     Text acceleration(font);
     acceleration.setCharacterSize(40);
-    acceleration.setPosition({1500.f, 230.f});
+    acceleration.setPosition({1500.f, 290.f});
 
-    //Set v and a arrow colors
+    //Graph lines info
+    RectangleShape x_axis({1820.f, 5.f});
+    x_axis.setPosition({ORIGIN - 5.f, 1080.f - ORIGIN});
+    RectangleShape y_axis({5.f, -980.f});
+    y_axis.setPosition({ORIGIN - 5.f, 1085.f - ORIGIN});
+    RectangleShape ticks({});
+
+    //Arrow information
     v_arrow[0].color = v_arrow[1].color = Color::Cyan;
     a_arrow[0].color = a_arrow[1].color = Color::Magenta;
 
-
-    //Add origin to path line
-    //path.append(Vertex{{ORIGIN, 1080 - ORIGIN}, Color::Red});
+    //Find bounds to scale graph
+    calculate_bounds();
 
     //Simulator Loop
     while(window.isOpen())
@@ -119,9 +132,9 @@ void simulator(RenderWindow& window)
 
         //Draw Screen
         window.clear(Color::Black); //Clear screen
-        draw_graph(window);
-        draw_state(window, distance, height, velocity, acceleration);
-        draw_line(window);
+        draw_graph(window, x_axis, y_axis, ticks);
+        draw_state(window, time, distance, height, velocity, acceleration);
+        draw_path(window);
         draw_vectors(window);
 
         //Display new
@@ -132,15 +145,42 @@ void simulator(RenderWindow& window)
             y = vx = vy = ax = ay = 0;
             //Draw Screen
             window.clear(Color::Black);
-            draw_graph(window);
-            draw_line(window);
-            draw_state(window, distance, height, velocity, acceleration);
-            draw_vectors(window);
+            draw_graph(window, x_axis, y_axis, ticks);
+            draw_path(window);
+            draw_state(window, time, distance, height, velocity, acceleration);
 
             //Display new
             window.display();
         }
     }
+}
+
+void calculate_bounds()
+{
+    float height1, height_max, distance1, distance_max,
+          velocity1y, velocity1x,
+          time_peak;
+
+    //Time of peak for freefall portion (with t=0 when booster stops)
+    time_peak = -(a_thrust * sin(launch_angle) * THRUST_TIME + GRAVITY * THRUST_TIME) / GRAVITY;
+
+    //Height and velocity at booster off, then max height
+    height1 = 0.5f * (a_thrust * sin(launch_angle) + GRAVITY) * THRUST_TIME * THRUST_TIME;
+    velocity1y = a_thrust * sin(launch_angle) * THRUST_TIME + GRAVITY * THRUST_TIME;
+    height_max = 0.5f * GRAVITY * time_peak * time_peak
+                + velocity1y * time_peak
+                + height1;
+
+    //Time of ground for freefall portion (with t=0 when booster stops)
+    time_ground = (-velocity1y - sqrt(velocity1y * velocity1y - 2.f * GRAVITY * height1)) / (2.f * 0.5f * GRAVITY);
+
+    //Distance and velocity at booster off, then max distance
+    distance1 = 0.5f * a_thrust * cos(launch_angle) * THRUST_TIME * THRUST_TIME;
+    velocity1x = a_thrust * cos(launch_angle) * THRUST_TIME;
+    distance_max = distance1 + velocity1x * time_ground;
+
+    std::cout << time_peak + 1.5f << std::endl << time_ground + 1.5f << std::endl << height_max << std::endl << distance_max << std::endl;
+
 }
 
 void update_numbers()
@@ -170,14 +210,13 @@ void update_numbers()
     y += vy * dt;
     x += vx * dt;
 
-    //Velocity and acceleraion vector magnitudes
+    //Velocity and acceleration vector magnitudes
     v = sqrt(vx * vx + vy * vy);
     a = sqrt(ax * ax + ay * ay);
 }
 
-void draw_line(RenderWindow& window)
+void draw_path(RenderWindow& window)
 {
-    Color pink(255, 192, 203);
     if (t <= THRUST_TIME)
         {
             path.append(Vertex{{x * PIXELS_PER_METER + ORIGIN, 1080.f - y * PIXELS_PER_METER - ORIGIN}, Color::Green});
@@ -190,43 +229,42 @@ void draw_line(RenderWindow& window)
         }
 }
 
-void draw_graph(RenderWindow& window)
+void draw_graph(RenderWindow& window, RectangleShape& x_axis, RectangleShape& y_axis, RectangleShape& ticks)
 {
-    RectangleShape rectangle({1820.f, 5.f});
-    rectangle.setPosition({ORIGIN, 1030.f});
-    window.draw(rectangle);
-    rectangle.setSize({5.f, -980.f});
-    rectangle.setPosition({ORIGIN - 5.f, 1035.f});
-    window.draw(rectangle);
+    window.draw(x_axis);
+    window.draw(y_axis);
 
     for (int i = 1; i <37; i++)
     {
-        rectangle.setPosition({ORIGIN + i * 50.f, 1070.f - ORIGIN});
-        rectangle.setSize({5.f, 25.f});
-        window.draw(rectangle);
+        ticks.setPosition({ORIGIN + i * 50.f, 1070.f - ORIGIN});
+        ticks.setSize({5.f, 25.f});
+        window.draw(ticks);
     }
     for (int i = 1; i <20; i++)
     {
-        rectangle.setPosition({ORIGIN - 15.f, 1080.f - ORIGIN - i * 50.f});
-        rectangle.setSize({25.f, -5.f});
-        window.draw(rectangle);
+        ticks.setPosition({ORIGIN - 15.f, 1080.f - ORIGIN - i * 50.f});
+        ticks.setSize({25.f, -5.f});
+        window.draw(ticks);
     }
 }
 
-void draw_state(RenderWindow& window, Text& distance, Text& height, Text& velocity, Text& acceleration)
+void draw_state(RenderWindow& window, Text& time, Text& distance, Text& height, Text& velocity, Text& acceleration)
 {
-    std::stringstream sx, sy, sv, sa;
+    std::stringstream st, sx, sy, sv, sa;
 
+    st << std::fixed << std::setprecision(2) << t;
     sx << std::fixed << std::setprecision(2) << x;
     sy << std::fixed << std::setprecision(2) << y;
     sv << std::fixed << std::setprecision(2) << v;
     sa << std::fixed << std::setprecision(2) << a;
 
+    time.setString("Time: " + st.str());
     distance.setString("Distance: " + sx.str());
     height.setString("Height: " + sy.str());
     velocity.setString("Velocity: " + sv.str());
     acceleration.setString("Acceleration: " + sa.str());
 
+    window.draw(time);
     window.draw(distance);
     window.draw(height);
     window.draw(velocity);
