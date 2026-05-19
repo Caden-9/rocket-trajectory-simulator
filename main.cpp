@@ -1,3 +1,6 @@
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
 #include <iostream>
 #include <cmath>
 #include <sstream>
@@ -8,13 +11,14 @@
 #include <SFML/Window.hpp>
 using namespace sf;
 
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
     /*Functions*/
 
 //Menu and Simulator
 void menu(RenderWindow& window);
 void simulator(RenderWindow& window);
-
-/*Calculations*/
 
 //Physics
 float acceleration_y(float t);
@@ -33,14 +37,26 @@ void draw_graph(RenderWindow& window, RectangleShape& x_axis, RectangleShape& y_
 void draw_state(RenderWindow& window, Text& time, Text& distance, Text& height, Text& velocity, Text& acceleration);
 void draw_arrows(RenderWindow& window);
 
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
 //Constants
 constexpr float GRAVITY = -9.81,
                 PI = 3.14159265,
                 ORIGIN = 50,
                 X_AXIS_LENGTH = 1600, Y_AXIS_LENGTH = 900;
 
-//Path points for graph
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+//Path points for graph and vertex points for arrows
 VertexArray path(PrimitiveType::LineStrip);
+Vertex v_arrow[2], a_arrow[2];
+
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+    /*Variables*/
 
 //Flight information
 float dt = 1.f/60.f, t = 0, thrust_time = 1.5,         //Time
@@ -50,17 +66,23 @@ float dt = 1.f/60.f, t = 0, thrust_time = 1.5,         //Time
 
       force = 400, mass_rocket = 10, mass_fuel = 10,   //Rocket
       fuel_per_second = mass_fuel / thrust_time,
-      launch_angle = 80 * PI / 180;                     //Angle
+      launch_angle = 60 * PI / 180;                     //Angle
 
 //Variables for calculate_bounds function
-float height1, height_max, distance1, distance_max,
+float height_max, distance_max,
           velocity1y, velocity1x,
           time_peak, time_ground;
 
 //Scale
 float pixels_per_meter, arrow_length_v, arrow_length_a;
 
-Vertex v_arrow[2], a_arrow[2];
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+bool end_flight;
+
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 int main()
 {
@@ -138,6 +160,9 @@ void simulator(RenderWindow& window)
     v_arrow[0].color = v_arrow[1].color = Color::Cyan;
     a_arrow[0].color = a_arrow[1].color = Color::Magenta;
 
+    //Flight bool for final correction
+    end_flight = true;
+
     //Find bounds to scale graph
     calculate_bounds();
     pixels_per_meter = std::min((X_AXIS_LENGTH / distance_max), (Y_AXIS_LENGTH / height_max));
@@ -153,7 +178,7 @@ void simulator(RenderWindow& window)
                 window.close();
         }
 
-        if (t <= time_ground)
+        if (t < time_ground)
         {
         //Update position
         update_numbers();
@@ -172,9 +197,22 @@ void simulator(RenderWindow& window)
         }
         else //Stop and keep updating screen
         {
-            //Stop graph
-            y = vx = vy = ax = ay = 0;
+            if (end_flight)
+            {
+                //Update to actual final numbers
+                t = time_ground;
+                x = position_x(t);
+                y = abs(position_y(t)); //absolute value to not have -0.00
+                v = sqrt(velocity_x(t) * velocity_x(t) + velocity_y(t) * velocity_y(t));
+                a = sqrt(acceleration_x(t) * acceleration_x(t) + acceleration_y(t) * acceleration_y(t));
 
+                //Add final point to path
+                path.append(Vertex{{x * pixels_per_meter + ORIGIN, 1080.f - y * pixels_per_meter - ORIGIN}, Color::Red});
+                
+                //Don't do this again
+                end_flight = false;
+            }
+            
             //Clear screen
             window.clear(Color::Black);
 
