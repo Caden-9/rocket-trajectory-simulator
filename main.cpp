@@ -16,7 +16,7 @@ void update_numbers();
 void draw_path(RenderWindow& window);
 void draw_graph(RenderWindow& window, RectangleShape& x_axis, RectangleShape& y_axis, RectangleShape& ticks);
 void draw_state(RenderWindow& window, Text& time, Text& distance, Text& height, Text& velocity, Text& acceleration);
-void draw_vectors(RenderWindow& window);
+void draw_arrows(RenderWindow& window);
 
 //Constants
 constexpr float GRAVITY = -9.81,
@@ -24,7 +24,6 @@ constexpr float GRAVITY = -9.81,
                 PI = 3.14159265,
                 THRUST_TIME = 1.5,
                 ORIGIN = 50,
-                ARROW_LENGTH = 25,
                 X_AXIS_LENGTH = 1600, Y_AXIS_LENGTH = 900;
 
 //Path points for graph
@@ -43,7 +42,7 @@ float height1, height_max, distance1, distance_max,
           time_peak, time_ground;
 
 //Scale
-float pixels_per_meter;
+float pixels_per_meter, arrow_length_v, arrow_length_a;
 
 Vertex v_arrow[2], a_arrow[2];
 
@@ -139,7 +138,7 @@ void simulator(RenderWindow& window)
         draw_graph(window, x_axis, y_axis, ticks);
         draw_state(window, time, distance, height, velocity, acceleration);
         draw_path(window);
-        draw_vectors(window);
+        draw_arrows(window);
 
         //Update position
         update_numbers();
@@ -271,16 +270,20 @@ void draw_state(RenderWindow& window, Text& time, Text& distance, Text& height, 
     window.draw(acceleration);
 }
 
-void draw_vectors(RenderWindow& window)
+void draw_arrows(RenderWindow& window)
 {
+    //Calculate arrow lengths
+    arrow_length_v = abs((v / sqrt(velocity1x * velocity1x + velocity1y * velocity1y))) * 100.f; //This number (50.f) is for max pixels long
+    arrow_length_a = abs((a / GRAVITY)) * 50.f;
+    
     //Make arrow bounds
     v_arrow[0].position = {x * pixels_per_meter + ORIGIN, 1080.f - y * pixels_per_meter - ORIGIN};
-    v_arrow[1].position = {(x + ARROW_LENGTH * vx / v) * pixels_per_meter + ORIGIN,
-                            1080.f - (y + ARROW_LENGTH * vy / v) * pixels_per_meter - ORIGIN};
+    v_arrow[1].position = {(x + arrow_length_v * vx / v) * pixels_per_meter + ORIGIN,
+                            1080.f - (y + arrow_length_v * vy / v) * pixels_per_meter - ORIGIN};
 
     a_arrow[0].position = {x * pixels_per_meter + ORIGIN, 1080.f - y * pixels_per_meter - ORIGIN};
-    a_arrow[1].position = {(x + ARROW_LENGTH * 0.5f * ax / a) * pixels_per_meter + ORIGIN,
-                            1080.f - (y + ARROW_LENGTH * 0.5f * ay / a) * pixels_per_meter - ORIGIN};
+    a_arrow[1].position = {(x + arrow_length_a * ax / a) * pixels_per_meter + ORIGIN,
+                            1080.f - (y + arrow_length_a * ay / a) * pixels_per_meter - ORIGIN};
 
     //Draw vectors
     window.draw(v_arrow, 2, PrimitiveType::Lines);
