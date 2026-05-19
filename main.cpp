@@ -19,14 +19,13 @@ void draw_state(RenderWindow& window, Text& time, Text& distance, Text& height, 
 void draw_vectors(RenderWindow& window);
 
 //Constants
-constexpr float PIXELS_PER_METER = 5;
-constexpr float GRAVITY = -9.81;
-constexpr float FORCE = 400;
-constexpr float MASS = 10;
-constexpr float PI = 3.14159265f;
-constexpr float THRUST_TIME = 1.5;
-constexpr float ORIGIN = 50;
-constexpr float ARROW_LENGTH = 25;
+constexpr float GRAVITY = -9.81,
+                FORCE = 400, MASS = 5,
+                PI = 3.14159265,
+                THRUST_TIME = 1.5,
+                ORIGIN = 50,
+                ARROW_LENGTH = 25,
+                X_AXIS_LENGTH = 1600, Y_AXIS_LENGTH = 900;
 
 //Path points for graph
 VertexArray path(PrimitiveType::LineStrip);
@@ -36,8 +35,15 @@ float x = 0, x_old, y = 0.0000000000000000001, y_old,
       vx = 0, vy = 0, v,
       a_thrust = FORCE/MASS, ax, ay, a,
       dt = 1.f/60.f, t = 0,
-      launch_angle = 60 * PI / 180,
-      time_ground;
+      launch_angle = 80 * PI / 180;
+
+//Variables for calculate_bounds function
+float height1, height_max, distance1, distance_max,
+          velocity1y, velocity1x,
+          time_peak, time_ground;
+
+//Scale
+float pixels_per_meter;
 
 Vertex v_arrow[2], a_arrow[2];
 
@@ -101,9 +107,9 @@ void simulator(RenderWindow& window)
     acceleration.setPosition({1500.f, 290.f});
 
     //Graph lines info
-    RectangleShape x_axis({1820.f, 5.f});
+    RectangleShape x_axis({X_AXIS_LENGTH, 5.f});
     x_axis.setPosition({ORIGIN - 5.f, 1080.f - ORIGIN});
-    RectangleShape y_axis({5.f, -980.f});
+    RectangleShape y_axis({5.f, -Y_AXIS_LENGTH});
     y_axis.setPosition({ORIGIN - 5.f, 1085.f - ORIGIN});
     RectangleShape ticks({});
 
@@ -113,6 +119,7 @@ void simulator(RenderWindow& window)
 
     //Find bounds to scale graph
     calculate_bounds();
+    pixels_per_meter = std::min((X_AXIS_LENGTH / distance_max), (Y_AXIS_LENGTH / height_max));
 
     //Simulator Loop
     while(window.isOpen())
@@ -125,17 +132,17 @@ void simulator(RenderWindow& window)
                 window.close();
         }
 
-        if (y > 0)
+        if (t <= time_ground + THRUST_TIME)
         {
-        //Update position
-        update_numbers();
-
         //Draw Screen
         window.clear(Color::Black); //Clear screen
         draw_graph(window, x_axis, y_axis, ticks);
         draw_state(window, time, distance, height, velocity, acceleration);
         draw_path(window);
         draw_vectors(window);
+
+        //Update position
+        update_numbers();
 
         //Display new
         window.display();
@@ -157,10 +164,6 @@ void simulator(RenderWindow& window)
 
 void calculate_bounds()
 {
-    float height1, height_max, distance1, distance_max,
-          velocity1y, velocity1x,
-          time_peak;
-
     //Time of peak for freefall portion (with t=0 when booster stops)
     time_peak = -(a_thrust * sin(launch_angle) * THRUST_TIME + GRAVITY * THRUST_TIME) / GRAVITY;
 
@@ -178,9 +181,6 @@ void calculate_bounds()
     distance1 = 0.5f * a_thrust * cos(launch_angle) * THRUST_TIME * THRUST_TIME;
     velocity1x = a_thrust * cos(launch_angle) * THRUST_TIME;
     distance_max = distance1 + velocity1x * time_ground;
-
-    std::cout << time_peak + 1.5f << std::endl << time_ground + 1.5f << std::endl << height_max << std::endl << distance_max << std::endl;
-
 }
 
 void update_numbers()
@@ -219,12 +219,12 @@ void draw_path(RenderWindow& window)
 {
     if (t <= THRUST_TIME)
         {
-            path.append(Vertex{{x * PIXELS_PER_METER + ORIGIN, 1080.f - y * PIXELS_PER_METER - ORIGIN}, Color::Green});
+            path.append(Vertex{{x * pixels_per_meter + ORIGIN, 1080.f - y * pixels_per_meter - ORIGIN}, Color::Green});
             window.draw(path);
         }
         if (t > THRUST_TIME)
         {
-            path.append(Vertex{{x * PIXELS_PER_METER + ORIGIN, 1080.f - y * PIXELS_PER_METER - ORIGIN}, Color::Red});
+            path.append(Vertex{{x * pixels_per_meter + ORIGIN, 1080.f - y * pixels_per_meter - ORIGIN}, Color::Red});
             window.draw(path);
         }
 }
@@ -234,13 +234,13 @@ void draw_graph(RenderWindow& window, RectangleShape& x_axis, RectangleShape& y_
     window.draw(x_axis);
     window.draw(y_axis);
 
-    for (int i = 1; i <37; i++)
+    for (int i = 1; i <33; i++)
     {
         ticks.setPosition({ORIGIN + i * 50.f, 1070.f - ORIGIN});
         ticks.setSize({5.f, 25.f});
         window.draw(ticks);
     }
-    for (int i = 1; i <20; i++)
+    for (int i = 1; i <19; i++)
     {
         ticks.setPosition({ORIGIN - 15.f, 1080.f - ORIGIN - i * 50.f});
         ticks.setSize({25.f, -5.f});
@@ -274,13 +274,13 @@ void draw_state(RenderWindow& window, Text& time, Text& distance, Text& height, 
 void draw_vectors(RenderWindow& window)
 {
     //Make arrow bounds
-    v_arrow[0].position = {x * PIXELS_PER_METER + ORIGIN, 1080.f - y * PIXELS_PER_METER - ORIGIN};
-    v_arrow[1].position = {(x + ARROW_LENGTH * vx / v) * PIXELS_PER_METER + ORIGIN,
-                            1080.f - (y + ARROW_LENGTH * vy / v) * PIXELS_PER_METER - ORIGIN};
+    v_arrow[0].position = {x * pixels_per_meter + ORIGIN, 1080.f - y * pixels_per_meter - ORIGIN};
+    v_arrow[1].position = {(x + ARROW_LENGTH * vx / v) * pixels_per_meter + ORIGIN,
+                            1080.f - (y + ARROW_LENGTH * vy / v) * pixels_per_meter - ORIGIN};
 
-    a_arrow[0].position = {x * PIXELS_PER_METER + ORIGIN, 1080.f - y * PIXELS_PER_METER - ORIGIN};
-    a_arrow[1].position = {(x + ARROW_LENGTH * 0.5f * ax / a) * PIXELS_PER_METER + ORIGIN,
-                            1080.f - (y + ARROW_LENGTH * 0.5f * ay / a) * PIXELS_PER_METER - ORIGIN};
+    a_arrow[0].position = {x * pixels_per_meter + ORIGIN, 1080.f - y * pixels_per_meter - ORIGIN};
+    a_arrow[1].position = {(x + ARROW_LENGTH * 0.5f * ax / a) * pixels_per_meter + ORIGIN,
+                            1080.f - (y + ARROW_LENGTH * 0.5f * ay / a) * pixels_per_meter - ORIGIN};
 
     //Draw vectors
     window.draw(v_arrow, 2, PrimitiveType::Lines);
