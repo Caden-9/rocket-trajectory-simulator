@@ -21,6 +21,7 @@ void menu(RenderWindow& window);
 void simulator(RenderWindow& window);
 
 //Physics
+void get_drag();
 float acceleration_y(float t);
 float velocity_y(float t);
 float position_y(float t);
@@ -60,13 +61,25 @@ Vertex v_arrow[2], a_arrow[2];
 
 //Flight information
 float dt = 1.f/60.f, t = 0, thrust_time = 1.5,         //Time
-      x = 0, y = 0.0000000000000000001,                //Position
-      vx = 0, vy = 0, v,                               //Velocity
-      a_thrust, ax, ay, a,                             //Acceleration
+      x = 0, y = 0.00000000000000001,                  //Position
+      vx = 0, vy = 0, v = 0,                           //Velocity
+      ax, ay, a,                                       //Acceleration
 
       force = 400, mass_rocket = 10, mass_fuel = 10,   //Rocket
+      m0 = mass_rocket + mass_fuel,
+      m1 = mass_rocket + mass_fuel,
       fuel_per_second = mass_fuel / thrust_time,
-      launch_angle = 60 * PI / 180;                     //Angle
+      launch_angle = 80 * PI / 180;                     //Angle
+
+//Constants used in calculations for after thrust time ends
+float v_thrust_time_x, v_thrust_time_y,
+      p_thrust_time_x, p_thrust_time_y;
+
+//Drag
+float a_drag_x = 0, a_drag_y = 0,
+      v_drag_x = 0, v_drag_y = 0,
+      p_drag_x = 0, p_drag_y = 0,
+      rho = 1.225, Cd = 0.4, r = 0.05, area;
 
 //Variables for calculate_bounds function
 float height_max, distance_max,
@@ -79,7 +92,7 @@ float pixels_per_meter, arrow_length_v, arrow_length_a;
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-bool end_flight;
+bool end_flight, end_thrust;
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -160,12 +173,16 @@ void simulator(RenderWindow& window)
     v_arrow[0].color = v_arrow[1].color = Color::Cyan;
     a_arrow[0].color = a_arrow[1].color = Color::Magenta;
 
-    //Flight bool for final correction
+    //Resest bools
     end_flight = true;
+    end_thrust = true;
 
     //Find bounds to scale graph
     calculate_bounds();
     pixels_per_meter = std::min((X_AXIS_LENGTH / distance_max), (Y_AXIS_LENGTH / height_max));
+
+    //Calculate frontal area for drag
+    area = PI * r * r;
 
     //Simulator Loop
     while(window.isOpen())
@@ -178,7 +195,7 @@ void simulator(RenderWindow& window)
                 window.close();
         }
 
-        if (t < time_ground)
+        if (y > 0)
         {
         //Update position
         update_numbers();
@@ -199,15 +216,10 @@ void simulator(RenderWindow& window)
         {
             if (end_flight)
             {
-                //Update to actual final numbers
-                t = time_ground;
-                x = position_x(t);
-                y = abs(position_y(t)); //absolute value to not have -0.00
-                v = sqrt(velocity_x(t) * velocity_x(t) + velocity_y(t) * velocity_y(t));
-                a = sqrt(acceleration_x(t) * acceleration_x(t) + acceleration_y(t) * acceleration_y(t));
+                y = 0.f;
 
                 //Add final point to path
-                path.append(Vertex{{x * pixels_per_meter + ORIGIN, 1080.f - y * pixels_per_meter - ORIGIN}, Color::Red});
+                path.append(Vertex{{x * pixels_per_meter + ORIGIN, 1080.f - ORIGIN}, Color::Red});
                 
                 //Don't do this again
                 end_flight = false;
@@ -227,15 +239,67 @@ void simulator(RenderWindow& window)
     }
 }
 
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+void get_drag()
+{  
+    //Estimate current velocity
+
+    //Calculate acceleration due to drag in x and y directions (currently uses previous velocity)
+    a_drag_x = - 0.5f * rho * v * vx * Cd * area / m1;
+    a_drag_y = - 0.5f * rho * v * vy * Cd * area / m1;
+
+    //Reset position and velocity due to drag to zero at end of thrust (for calculations)
+    if (t > thrust_time)
+    {
+        if (end_thrust)
+        {
+            //Remember position and velocity at end of thrust
+            v_thrust_time_x = vx;
+            v_thrust_time_y = vy;
+
+            p_thrust_time_x = x;
+            p_thrust_time_y = y;            
+            
+            //Reset drag position and velocity (we don't want to add p and v from during thrust twice)
+            v_drag_x = 0.f;
+            v_drag_y = 0.f;
+            p_drag_x = 0.f;
+            p_drag_y = 0.f;
+
+            //Don't do this again
+            end_thrust = false;
+        }
+    }
+
+    //Change in velocity due to drag
+    v_drag_x += a_drag_x * dt;
+    v_drag_y += a_drag_y * dt;
+
+    //Change in position due to velocity from drag
+    p_drag_x += v_drag_x * dt;
+    p_drag_y += v_drag_y * dt;
+
+    //Test
+    //std::cout << a_drag_x << std::endl << a_drag_y << std::endl << std::endl << v_drag_x << std::endl << v_drag_y << std::endl << std::endl << p_drag_x << std::endl << p_drag_y << std::endl << std::endl;
+}
+
 float acceleration_y(float t)
 {
     if (t <= thrust_time)
     {
-        return GRAVITY + force / (mass_rocket + mass_fuel - fuel_per_second * t) * sin(launch_angle);
+        return  GRAVITY                                                                                                             //Gravity
+
+                + force / (m1) * sin(launch_angle)                                                                                  //Thrust
+                
+                + a_drag_y;                                                                                                         //Drag
     }
     else
     {
-        return GRAVITY;
+        return  GRAVITY                                                                                                             //Gravity
+                
+                + a_drag_y;                                                                                                         //Drag
     }
 
 }
@@ -244,12 +308,19 @@ float velocity_y(float t)
 {
     if (t <= thrust_time)
     {
-        return GRAVITY * t - (force / fuel_per_second) * std::log(mass_rocket + mass_fuel - fuel_per_second * t) * sin(launch_angle)
-                + (force / fuel_per_second) * std::log(mass_rocket + mass_fuel) * sin(launch_angle);                                               //Constant
+        return  GRAVITY * t                                                                                                         //Gravity
+
+                + (force / fuel_per_second) * std::log(m0 / m1) * sin(launch_angle)                                                 //Thrust
+
+                + v_drag_y;                                                                                                         //Drag
     }
     else
     {
-        return velocity_y(thrust_time) + GRAVITY * (t - thrust_time);
+        return  GRAVITY * (t - thrust_time)                                                                                         //Gravity
+
+                + v_drag_y                                                                                                          //Drag
+
+                + v_thrust_time_y;                                                                                                  //Constant 1
     }
 
 }
@@ -258,17 +329,24 @@ float position_y(float t)
 {
     if (t <= thrust_time)
     {
-        return 0.5f * GRAVITY * t * t - (force / fuel_per_second) * sin(launch_angle) * 
-                 (std::log(mass_rocket + mass_fuel - fuel_per_second * t) * t
-                  - t - (mass_rocket + mass_fuel) / fuel_per_second * std::log(mass_rocket + mass_fuel - fuel_per_second * t))
-                 + (force / fuel_per_second) * std::log(mass_rocket + mass_fuel) * sin(launch_angle) * t                                            //Constant * t
-                 - (force / fuel_per_second) * sin(launch_angle) * (mass_rocket + mass_fuel) / fuel_per_second * std::log(mass_rocket + mass_fuel); //Constant
+        return  0.5f * GRAVITY * t * t                                                                                              //Gravity
+
+                + (force / fuel_per_second) * sin(launch_angle)                                                                     //Thrust
+                * (- std::log(m1 / m0) * t
+                  + t
+                  + (m0) / fuel_per_second * std::log(m1 / m0))
+
+                + p_drag_y;                                                                                                         //Drag
     }
     else
     {
-        return position_y(thrust_time)
-            + 0.5f * GRAVITY * (t - thrust_time) * (t - thrust_time)
-            + velocity_y(thrust_time) * (t - thrust_time);
+        return  0.5f * GRAVITY * (t - thrust_time) * (t - thrust_time)                                                              //Gravity
+
+                + p_drag_y                                                                                                          //Drag
+
+                + v_thrust_time_y * (t - thrust_time)                                                                               //Constant 1 * t
+
+                + p_thrust_time_y;                                                                                                  //Constant 2
     }
 }
 
@@ -276,11 +354,13 @@ float acceleration_x(float t)
 {
     if (t <= thrust_time)
     {
-        return force / (mass_rocket + mass_fuel - fuel_per_second * t) * cos(launch_angle);
+        return  force / (m1) * cos(launch_angle)                                                                                    //Thrust
+                
+                + a_drag_x;                                                                                                         //Drag
     }
     else
     {
-        return 0.f;
+        return  a_drag_x;                                                                                                           //Drag
     }
 }
 
@@ -288,12 +368,15 @@ float velocity_x(float t)
 {
     if (t <= thrust_time)
     {
-        return  - (force / fuel_per_second) * std::log(mass_rocket + mass_fuel - fuel_per_second * t) * cos(launch_angle)
-                + (force / fuel_per_second) * std::log(mass_rocket + mass_fuel) * cos(launch_angle);                                               //Constant
+        return  + (force / fuel_per_second) * std::log(m0 / m1) * cos(launch_angle)                                                 //Thrust
+
+                + v_drag_x;                                                                                                         //Drag
     }
     else
     {
-        return velocity_x(thrust_time);
+        return  v_drag_x                                                                                                             //Drag
+        
+                + v_thrust_time_x;                                                                                                   //Constant 1
     } 
 }
 
@@ -301,44 +384,71 @@ float position_x(float t)
 {
     if (t <= thrust_time)
     {
-        return  - (force / fuel_per_second) * cos(launch_angle) * 
-                 (std::log(mass_rocket + mass_fuel - fuel_per_second * t) * t
-                  - t - (mass_rocket + mass_fuel) / fuel_per_second * std::log(mass_rocket + mass_fuel - fuel_per_second * t))
-                 + (force / fuel_per_second) * std::log(mass_rocket + mass_fuel) * cos(launch_angle) * t                                            //Constant * t
-                 - (force / fuel_per_second) * cos(launch_angle) * (mass_rocket + mass_fuel) / fuel_per_second * std::log(mass_rocket + mass_fuel); //Constant
+        return  (force / fuel_per_second) * cos(launch_angle)                                                                       //Thrust
+                * (- std::log(m1 / m0) * t
+                  + t
+                  + (m0) / fuel_per_second * std::log(m1 / m0))
+
+                + p_drag_x;                                                                                                         //Drag
     }
     else
     {
-        return position_x(thrust_time)
-            + velocity_x(thrust_time) * (t - thrust_time);
+        return  p_drag_x                                                                                                            //Drag
+        
+                + v_thrust_time_x * (t - thrust_time)                                                                               //Constant 1 * t
+
+                + p_thrust_time_x;                                                                                                  //Constant 2
     }
 }
 
-void calculate_bounds()
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+void calculate_bounds()   //This function estimates the max height and distance of the rocket without considering drag
 {
+    //Set m1 to correct mass at peak height and distance
+    m1 = mass_rocket;
+    
     //Time of peak
-    time_peak = - velocity_y(thrust_time) / GRAVITY + thrust_time;
+    time_peak = - (force / fuel_per_second) * std::log(m0 / mass_rocket) * sin(launch_angle) / GRAVITY;
 
     //Max height
+    v_thrust_time_y = velocity_y(thrust_time);
+    p_thrust_time_y = position_y(thrust_time);
     height_max = position_y(time_peak);
 
-    //Time rocket hits ground
-    time_ground = (-velocity_y(thrust_time) -
-                sqrt(velocity_y(thrust_time) * velocity_y(thrust_time) - 2.f * GRAVITY * position_y(thrust_time)))
-                / (GRAVITY) + thrust_time;
-
-    //Max distance
-    distance_max = position_x(time_ground);
+    //Max distance; estimate about double the distance of that at the max height
+    v_thrust_time_x = velocity_x(thrust_time);
+    p_thrust_time_x = position_x(thrust_time);
+    distance_max = 2 * position_x(time_peak);
 
     //Velocity after boosters stop for velocity arrow scale
     velocity1x = velocity_x(thrust_time);
     velocity1y = velocity_y(thrust_time);
+
+    //Reset m1
+    m1 = mass_fuel + mass_rocket;
+
+    //Test
+    //std::cout << time_peak << std::endl << height_max << std::endl << distance_max;
 }
 
 void update_numbers()
 {
-    //New time, mass, and acceleration
+    //New time and mass
     t += dt;
+
+    if (t <= thrust_time)
+    {
+        m1 = m0 - fuel_per_second * t;
+    }
+    else
+    {
+        m1 = mass_rocket;
+    }
+
+    //Drag
+    get_drag();
 
     //Get current acceleration, velocity, and position
     ax = acceleration_x(t);
@@ -355,9 +465,12 @@ void update_numbers()
     a = sqrt(ax * ax + ay * ay);
 }
 
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
 void draw_path(RenderWindow& window)
 {
-    if (t <= time_ground)
+    if (end_flight)
     {
         if (t <= thrust_time) //Green during boosters
         {
