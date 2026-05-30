@@ -17,8 +17,8 @@ using namespace sf;
     /*Functions*/
 
 //Menu and Simulator
-void menu(RenderWindow& window);
-void simulator(RenderWindow& window);
+void menu();
+void simulator();
 
 //Physics
 void get_drag();
@@ -34,19 +34,26 @@ void get_scale();
 void update_numbers();
 
 /*Screen*/
-void draw_path(RenderWindow& window);
-void draw_graph(RenderWindow& window, RectangleShape& x_axis, RectangleShape& y_axis, RectangleShape& ticks, Text& numbers);
-void draw_state(RenderWindow& window, Text& time, Text& distance, Text& height, Text& velocity, Text& acceleration);
-void draw_arrows(RenderWindow& window);
+void draw_path();
+void draw_arrows();
+void draw_graph();
+void draw_UI();
+void rounded_box(float x_box, float y_box, float b_width, float b_height, float r_box);
+void draw_state();
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 //Constants
-constexpr float GRAVITY = -9.81,
-                PI = 3.14159265,
-                ORIGIN = 100,
-                X_AXIS_LENGTH = 800, Y_AXIS_LENGTH = 900;
+constexpr float GRAVITY = -9.81f,
+                PI = 3.14159265f,
+                X_AXIS_LENGTH = 1000.f, Y_AXIS_LENGTH = 950.f,
+                TEXT_SIZE = 30.f, HEADING_SIZE = 35.f,
+                X_STATUS_TEXT = 1200.f, Y_STATUS = 110.f, GAP_STATUS = 70.f,
+                X_STATUS_NUMBERS = 1860.f;
+
+const Color BORDER(140, 140, 140);
+const Color UI_BLUE(105, 145, 215);
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -70,7 +77,7 @@ float dt = 1.f/60.f, t = 0.f, thrust_time = 5.f,      //Time
       m0 = mass_rocket + mass_fuel,
       m1 = mass_rocket + mass_fuel,
       fuel_per_second = mass_fuel / thrust_time,
-      launch_angle = 80 * PI / 180;                     //Angle
+      launch_angle = 80 * PI / 180;                    //Angle
 
 //Constants used in calculations for after thrust time ends
 float v_thrust_time_x, v_thrust_time_y,
@@ -88,7 +95,8 @@ float height_max, distance_max,
           time_peak, time_ground;
 
 //Scale and graph
-float pixels_per_meter,
+float origin_x = 110.f, origin_y = 86.f,
+      pixels_per_meter,
       arrow_length_v, arrow_length_a,
       num_ticks_x, num_ticks_y;
 
@@ -96,27 +104,71 @@ float pixels_per_meter,
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 bool in_air, end_thrust;
-std::vector<int> scales = {1, 2, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 2000, 5000, 10000};
+std::vector<int> scales = {1, 2, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95,
+                           100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950,
+                           1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500, 7000, 7500, 8000, 8500, 9000, 9500,
+                           10000};
 int num_scales;
+
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+    /*Screen*/
+
+//Window
+RenderWindow window(VideoMode({1920, 1080}), "RTS", Style::Titlebar | Style::Close);
+
+//Text
+Font roboto;
+Font roboto_bold;
+Text standard_text(roboto);
+Text heading_text(roboto);
+Text tick_numbers_text(roboto);
+
+//Graph
+RectangleShape ticks({});
+RectangleShape x_axis({X_AXIS_LENGTH + 5.f, 5.f});
+RectangleShape y_axis({5.f, -Y_AXIS_LENGTH - 5.f});
+
+//Rounded boxes function
+RectangleShape box({});
+CircleShape corner({});
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 int main()
 {
-    //Initialize Window
-    RenderWindow window(VideoMode({1920, 1080}), "RTS", Style::Titlebar | Style::Close);
-    window.clear(Color::Black);
-    window.display();
+    //Window
     window.setFramerateLimit(60);
 
+    //Text
+    if (!roboto.openFromFile("Fonts/Roboto-Regular.ttf"))
+    {
+        std::cerr << "Failed to load font\n";
+        return 1;
+    }
+
+    standard_text.setCharacterSize(TEXT_SIZE);
+    heading_text.setCharacterSize(HEADING_SIZE);
+    heading_text.setFillColor(UI_BLUE);
+    
+    tick_numbers_text.setCharacterSize(20);
+
+    //Axis positions
+    x_axis.setPosition({origin_x - 5.f, 1080.f - origin_y});
+    y_axis.setPosition({origin_x - 5.f, 1085.f - origin_y});
+
+    //Start simulator
     while(window.isOpen())
-    menu(window);
+    {
+        menu();
+    }
     
     return 0;
 }
 
-void menu(RenderWindow& window)
+void menu()
 {
     while (const std::optional event = window.pollEvent()) //Look for events
     {
@@ -130,69 +182,34 @@ void menu(RenderWindow& window)
         {
             if (mousePressed->button == Mouse::Button::Left)
             {
-                simulator(window);
+                simulator();
             }
         }
     }
 }
 
-void simulator(RenderWindow& window)
+void simulator()
 {
-    //Initialize font and text specifications
-    Font font;
-        if (!font.openFromFile("fonts/Roboto-Regular.ttf"))
-        {
-            std::cout << "Failed to load font\n";
-        }
-
-    Text time(font);
-    time.setCharacterSize(40);
-    time.setPosition({1500.f, 50.f});
-
-    Text distance(font);
-    distance.setCharacterSize(40);
-    distance.setPosition({1500.f, 110.f});
-
-    Text height(font);
-    height.setCharacterSize(40);
-    height.setPosition({1500.f, 170.f});
-
-    Text velocity(font);
-    velocity.setCharacterSize(40);
-    velocity.setPosition({1500.f, 230.f});
-
-    Text acceleration(font);
-    acceleration.setCharacterSize(40);
-    acceleration.setPosition({1500.f, 290.f});
-
-    Text numbers(font);
-    numbers.setCharacterSize(20);
-
-    //Graph lines info
-    RectangleShape x_axis({X_AXIS_LENGTH + 5.f, 5.f});
-    x_axis.setPosition({ORIGIN - 5.f, 1080.f - ORIGIN});
-
-    RectangleShape y_axis({5.f, -Y_AXIS_LENGTH - 5.f});
-    y_axis.setPosition({ORIGIN - 5.f, 1085.f - ORIGIN});
-
-    RectangleShape ticks({});
+    //Graph Ticks
     num_ticks_x = floor(X_AXIS_LENGTH / 50);
     num_ticks_y = floor(Y_AXIS_LENGTH / 50);
+    
+    //Find bounds to scale graph
+    calculate_bounds();
+    get_scale();
+
+//----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
     //Add origin to path line
-    path.append(Vertex{{ORIGIN, 1080.f - ORIGIN}, Color::Green});
+    path.append(Vertex{{origin_x, 1080.f - origin_y}, Color::Green});
 
-    //Arrow information
+    //Arrow colors
     v_arrow[0].color = v_arrow[1].color = Color::Cyan;
     a_arrow[0].color = a_arrow[1].color = Color::Magenta;
 
     //Reset bools
     in_air = true;
     end_thrust = true;
-
-    //Find bounds to scale graph
-    calculate_bounds();
-    get_scale();
 
     //Calculate frontal area for drag
     area = PI * r * r;
@@ -203,7 +220,7 @@ void simulator(RenderWindow& window)
         //Check if closed
         while(const std::optional event = window.pollEvent())
         {
-            //Close with button and esc
+            //Close with button
             if (event->is<Event::Closed>())
                 window.close();
         }
@@ -217,10 +234,11 @@ void simulator(RenderWindow& window)
         window.clear(Color::Black);
         
         //Draw Screen
-        draw_graph(window, x_axis, y_axis, ticks, numbers);
-        draw_state(window, time, distance, height, velocity, acceleration);
-        draw_path(window);
-        draw_arrows(window);
+        draw_UI();
+        draw_graph();
+        draw_path();
+        draw_state();
+        draw_arrows();
 
         //Display new
         window.display();
@@ -233,7 +251,7 @@ void simulator(RenderWindow& window)
 
                 //Add final point to path instead of point with negative height
                 path.resize(path.getVertexCount() - 1);
-                path.append(Vertex{{x * pixels_per_meter + ORIGIN, 1080.f - ORIGIN}, Color::Red});
+                path.append(Vertex{{x * pixels_per_meter + origin_x, 1080.f - origin_y}, Color::Red});
                 
                 //Don't do this again
                 in_air = false;
@@ -243,9 +261,10 @@ void simulator(RenderWindow& window)
             window.clear(Color::Black);
 
             //Draw Screen
-            draw_graph(window, x_axis, y_axis, ticks, numbers);
-            draw_path(window);
-            draw_state(window, time, distance, height, velocity, acceleration);
+            draw_UI();
+            draw_graph();
+            draw_path();
+            draw_state();
 
             //Display new
             window.display();
@@ -465,6 +484,10 @@ void get_scale()
                 pixels_per_meter = 50.f / scales[i];
                 break;
             }
+            else
+            {
+                pixels_per_meter = 50.f / scales[i];
+            }
         }
     }
     else
@@ -475,6 +498,10 @@ void get_scale()
             {
                 pixels_per_meter = 50.f / scales[i];
                 break;
+            }
+            else
+            {
+                pixels_per_meter = 50.f / scales[i];
             }
         }
     }
@@ -515,23 +542,43 @@ void update_numbers()
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-void draw_path(RenderWindow& window)
+void draw_path()
 {
     if (in_air)
     {
         if (t <= thrust_time) //Green during boosters
         {
-            path.append(Vertex{{x * pixels_per_meter + ORIGIN, 1080.f - y * pixels_per_meter - ORIGIN}, Color::Green});
+            path.append(Vertex{{x * pixels_per_meter + origin_x, 1080.f - y * pixels_per_meter - origin_y}, Color::Green});
         }
         else //Red during freefall
         {
-            path.append(Vertex{{x * pixels_per_meter + ORIGIN, 1080.f - y * pixels_per_meter - ORIGIN}, Color::Red});
+            path.append(Vertex{{x * pixels_per_meter + origin_x, 1080.f - y * pixels_per_meter - origin_y}, Color::Red});
         }
     }
     window.draw(path);
 }
 
-void draw_graph(RenderWindow& window, RectangleShape& x_axis, RectangleShape& y_axis, RectangleShape& ticks, Text& numbers)
+void draw_arrows()
+{
+    //Calculate arrow lengths
+    arrow_length_v = abs((v / sqrt(velocity_scale_x * velocity_scale_x + velocity_scale_y * velocity_scale_y))) * 100.f; //This number (50.f) is for max pixels long
+    arrow_length_a = abs((a / GRAVITY)) * 50.f;
+    
+    //Make arrow bounds
+    v_arrow[0].position = {x * pixels_per_meter + origin_x, 1080.f - y * pixels_per_meter - origin_y};
+    v_arrow[1].position = {x * pixels_per_meter  + arrow_length_v * vx / v + origin_x,
+                            1080.f - y * pixels_per_meter - arrow_length_v * vy / v - origin_y};
+
+    a_arrow[0].position = {x * pixels_per_meter + origin_x, 1080.f - y * pixels_per_meter - origin_y};
+    a_arrow[1].position = {x * pixels_per_meter + arrow_length_a * ax / a + origin_x,
+                            1080.f - y * pixels_per_meter - arrow_length_a * ay / a - origin_y};
+
+    //Draw vectors
+    window.draw(v_arrow, 2, PrimitiveType::Lines);
+    window.draw(a_arrow, 2, PrimitiveType::Lines);
+}
+
+void draw_graph()
 {
     //Draw axis lines
     window.draw(x_axis);
@@ -540,48 +587,151 @@ void draw_graph(RenderWindow& window, RectangleShape& x_axis, RectangleShape& y_
     //Draw ticks
     for (int i = 1; i < num_ticks_x + 1; i++) //x_axis
     {
-        ticks.setPosition({ORIGIN - 3 + i * 50.f, 1070.f - ORIGIN});
+        ticks.setPosition({origin_x - 3 + i * 50.f, 1070.f - origin_y});
         ticks.setSize({3.f, 25.f});
         window.draw(ticks);
     }
     for (int i = 1; i < num_ticks_y + 1; i++) //y_axis
     {
-        ticks.setPosition({ORIGIN - 15.f, 1083.f - ORIGIN - i * 50.f});
+        ticks.setPosition({origin_x - 15.f, 1083.f - origin_y - i * 50.f});
         ticks.setSize({25.f, -3.f});
         window.draw(ticks);
     }
 
     //Draw numbers
-    for (int i = 1; i <= num_ticks_x; i++) //x-axis
+    //Skip every other number if they are too cluttered
+    int i = 1;
+    int c = 1;
+    if (50.f / pixels_per_meter * num_ticks_x >= 1000)
     {
-        std::stringstream tick_numbers;
-
-        //New number
-        tick_numbers << std::fixed << std::setprecision(0) << 50.f / pixels_per_meter * i;
-        numbers.setString(tick_numbers.str());
-
-        //Place in correct spot
-        FloatRect bounds = numbers.getGlobalBounds();
-        numbers.setPosition({ORIGIN + i * 50.f - bounds.size.x / 2.f - 3.f, 1100 - ORIGIN});
-        window.draw(numbers);
+        c = 2;
     }
-    for (int i = 1; i <= num_ticks_y; i++) //y-axis
+    
+    for (i = 1 * c; i <= num_ticks_x; i += c) //x-axis
     {
         std::stringstream tick_numbers;
 
         //New number
         tick_numbers << std::fixed << std::setprecision(0) << 50.f / pixels_per_meter * i;
-        numbers.setString(tick_numbers.str());
+        tick_numbers_text.setString(tick_numbers.str());
 
         //Place in correct spot
-        FloatRect bounds = numbers.getGlobalBounds();
-        numbers.setPosition({ORIGIN - 25.f - bounds.size.x, 1077 - ORIGIN - bounds.size.y / 2.f - 50.f * i});
-        window.draw(numbers);
+        FloatRect bounds = tick_numbers_text.getGlobalBounds();
+        tick_numbers_text.setPosition({origin_x + i * 50.f - bounds.size.x / 2.f - 3.f, 1103 - origin_y});
+        window.draw(tick_numbers_text);
+    
+    }
+
+    c = 1;
+    if (50.f / pixels_per_meter * num_ticks_y >= 1000)
+    {
+        c = 2;
+    }
+
+    for (i = 1 * c; i <= num_ticks_y; i += c) //y-axis
+    {
+        std::stringstream tick_numbers;
+
+        //New number
+        tick_numbers << std::fixed << std::setprecision(0) << 50.f / pixels_per_meter * i;
+        tick_numbers_text.setString(tick_numbers.str());
+
+        //Place in correct spot
+        FloatRect bounds = tick_numbers_text.getGlobalBounds();
+        tick_numbers_text.setPosition({origin_x - 50.f - bounds.size.x / 2, 1077 - origin_y - bounds.size.y / 2.f - 50.f * i});
+        window.draw(tick_numbers_text);
     }
 }
 
-void draw_state(RenderWindow& window, Text& time, Text& distance, Text& height, Text& velocity, Text& acceleration)
+void draw_UI()
 {
+    //Box two sections
+    rounded_box(20.f, 20.f, 1120.f, 1040.f, 20.f);
+    rounded_box(1160.f, 20.f, 740.f, 1040.f, 20.f);
+
+    //Title sections
+    heading_text.setString("STATUS");
+    heading_text.setPosition({X_STATUS_TEXT, 50.f});
+    window.draw(heading_text);
+
+    //Draw status labels
+    standard_text.setString("Time:");
+    standard_text.setPosition({X_STATUS_TEXT, Y_STATUS});
+    window.draw(standard_text);
+    standard_text.setString("Distance:");
+    standard_text.setPosition({X_STATUS_TEXT, Y_STATUS + GAP_STATUS});
+    window.draw(standard_text);
+    standard_text.setString("Height:");
+    standard_text.setPosition({X_STATUS_TEXT, Y_STATUS + GAP_STATUS * 2});
+    window.draw(standard_text);
+    standard_text.setString("Velocity:");
+    standard_text.setPosition({X_STATUS_TEXT, Y_STATUS + GAP_STATUS * 3});
+    window.draw(standard_text);
+    standard_text.setString("Acceleration:");
+    standard_text.setPosition({X_STATUS_TEXT, Y_STATUS + GAP_STATUS * 4});
+    window.draw(standard_text);
+}
+
+void rounded_box(float x_box, float y_box, float b_width, float b_height, float r_box)
+{
+        //Outline
+    //Boxes
+    box.setOutlineThickness(2.f);
+    box.setOutlineColor(BORDER);
+
+    box.setSize({b_width - 2.f * r_box, b_height});
+    box.setPosition({x_box + r_box, 20.f});
+    window.draw(box);
+
+    box.setSize({b_width, b_height - 2.f * r_box});
+    box.setPosition({x_box, 20.f + r_box});
+    window.draw(box);    
+    
+    //Corners
+    corner.setOutlineThickness(2.f);
+    corner.setOutlineColor(BORDER);
+    corner.setRadius(r_box);
+
+    corner.setPosition({x_box, 20.f});
+    window.draw(corner);
+    corner.setPosition({x_box + b_width - 2.f * r_box, 20.f});
+    window.draw(corner);
+    corner.setPosition({x_box, y_box + b_height - 2.f * r_box});
+    window.draw(corner);
+    corner.setPosition({x_box + b_width - 2.f * r_box, y_box + b_height - 2.f * r_box});
+    window.draw(corner);
+
+        //Middle
+    //Boxes
+    box.setOutlineColor(Color::Transparent);
+    box.setFillColor(Color::Black);
+
+    box.setSize({b_width - 2.f * r_box, b_height});
+    box.setPosition({x_box + r_box, 20.f});
+    window.draw(box);
+
+    box.setSize({b_width, b_height - 2.f * r_box});
+    box.setPosition({x_box, 20.f + r_box});
+    window.draw(box);    
+
+    //Corners
+    corner.setOutlineColor(Color::Transparent);
+    corner.setRadius(r_box);
+    corner.setFillColor(Color::Black);
+
+    corner.setPosition({x_box, 20.f});
+    window.draw(corner);
+    corner.setPosition({x_box + b_width - 2.f * r_box, 20.f});
+    window.draw(corner);
+    corner.setPosition({x_box, y_box + b_height - 2.f * r_box});
+    window.draw(corner);
+    corner.setPosition({x_box + b_width - 2.f * r_box, y_box + b_height - 2.f * r_box});
+    window.draw(corner);
+}
+
+void draw_state()
+{
+    //Put current numbers into strings
     std::stringstream st, sx, sy, sv, sa;
 
     st << std::fixed << std::setprecision(2) << t;
@@ -590,35 +740,25 @@ void draw_state(RenderWindow& window, Text& time, Text& distance, Text& height, 
     sv << std::fixed << std::setprecision(2) << v;
     sa << std::fixed << std::setprecision(2) << a;
 
-    time.setString("Time: " + st.str());
-    distance.setString("Distance: " + sx.str());
-    height.setString("Height: " + sy.str());
-    velocity.setString("Velocity: " + sv.str());
-    acceleration.setString("Acceleration: " + sa.str());
-
-    window.draw(time);
-    window.draw(distance);
-    window.draw(height);
-    window.draw(velocity);
-    window.draw(acceleration);
-}
-
-void draw_arrows(RenderWindow& window)
-{
-    //Calculate arrow lengths
-    arrow_length_v = abs((v / sqrt(velocity_scale_x * velocity_scale_x + velocity_scale_y * velocity_scale_y))) * 100.f; //This number (50.f) is for max pixels long
-    arrow_length_a = abs((a / GRAVITY)) * 50.f;
-    
-    //Make arrow bounds
-    v_arrow[0].position = {x * pixels_per_meter + ORIGIN, 1080.f - y * pixels_per_meter - ORIGIN};
-    v_arrow[1].position = {x * pixels_per_meter  + arrow_length_v * vx / v + ORIGIN,
-                            1080.f - y * pixels_per_meter - arrow_length_v * vy / v - ORIGIN};
-
-    a_arrow[0].position = {x * pixels_per_meter + ORIGIN, 1080.f - y * pixels_per_meter - ORIGIN};
-    a_arrow[1].position = {x * pixels_per_meter + arrow_length_a * ax / a + ORIGIN,
-                            1080.f - y * pixels_per_meter - arrow_length_a * ay / a - ORIGIN};
-
-    //Draw vectors
-    window.draw(v_arrow, 2, PrimitiveType::Lines);
-    window.draw(a_arrow, 2, PrimitiveType::Lines);
+    //Draw numbers
+    standard_text.setString(st.str());
+    FloatRect bounds = standard_text.getGlobalBounds();
+    standard_text.setPosition({X_STATUS_NUMBERS - bounds.size.x, Y_STATUS});
+    window.draw(standard_text);
+    standard_text.setString(sx.str());
+    bounds = standard_text.getGlobalBounds();
+    standard_text.setPosition({X_STATUS_NUMBERS - bounds.size.x, Y_STATUS + GAP_STATUS});
+    window.draw(standard_text);
+    standard_text.setString(sy.str());
+    bounds = standard_text.getGlobalBounds();
+    standard_text.setPosition({X_STATUS_NUMBERS - bounds.size.x, Y_STATUS + GAP_STATUS * 2});
+    window.draw(standard_text);
+    standard_text.setString(sv.str());
+    bounds = standard_text.getGlobalBounds();
+    standard_text.setPosition({X_STATUS_NUMBERS - bounds.size.x, Y_STATUS + GAP_STATUS * 3});
+    window.draw(standard_text);
+    standard_text.setString(sa.str());
+    bounds = standard_text.getGlobalBounds();
+    standard_text.setPosition({X_STATUS_NUMBERS - bounds.size.x, Y_STATUS + GAP_STATUS * 4});
+    window.draw(standard_text);
 }
