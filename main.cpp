@@ -34,26 +34,48 @@ void get_scale();
 void update_numbers();
 
 /*Screen*/
+
+//LHS
+void draw_graph();
 void draw_path();
 void draw_arrows();
-void draw_graph();
+
+//RHS
 void draw_UI();
-void rounded_box(float x_box, float y_box, float b_width, float b_height, float r_box);
+void draw_status();
 void draw_state();
+void draw_controls();
+void draw_options();
+void draw_bottom_buttons();
+
+void draw_plus_minus(float x_box, float y_box, float b_width, float b_height, float r_box);
+void rounded_box(float x_box, float y_box, float b_width, float b_height, float r_box, const Color& middle, const Color& border);
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 //Constants
-constexpr float GRAVITY = -9.81f,
-                PI = 3.14159265f,
-                X_AXIS_LENGTH = 1000.f, Y_AXIS_LENGTH = 950.f,
-                TEXT_SIZE = 30.f, HEADING_SIZE = 35.f,
-                X_STATUS_TEXT = 1200.f, Y_STATUS = 110.f, GAP_STATUS = 70.f,
-                X_STATUS_NUMBERS = 1860.f;
+constexpr float GRAVITY = -9.81f, PI = 3.14159265f,
 
-const Color BORDER(140, 140, 140);
-const Color UI_BLUE(105, 145, 215);
+                X_AXIS_LENGTH = 1000.f, Y_AXIS_LENGTH = 950.f,
+
+                TEXT_SIZE = 31.f, HEADING_SIZE = 35.f,
+
+                X_TEXT = 1200.f,
+                X_STATUS_NUMBERS = 1830.f,
+
+                GAP_STATUS = 50.f,
+                GAP_CONTROL = 60.f,
+                GAP_OPTIONS = 60.f,
+
+                Y_STATUS = 100.f,
+                Y_CONTROLS = Y_STATUS + GAP_STATUS * 4 + TEXT_SIZE + 52.f,
+                Y_OPTIONS = Y_CONTROLS + GAP_CONTROL * 5 + TEXT_SIZE + 60.f,
+                Y_BOTTOM_BUTTONS = Y_OPTIONS + GAP_OPTIONS + TEXT_SIZE + 70.f;
+
+const Color UI_GREY(120, 120, 120),
+            UI_BLUE(105, 145, 215),
+            PLUS_MINUS_GREY(20, 20, 20);
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -68,7 +90,7 @@ Vertex v_arrow[2], a_arrow[2];
     /*Variables*/
 
 //Flight information
-float dt = 1.f/60.f, t = 0.f, thrust_time = 5.f,      //Time
+float dt = 1.f/60.f, t = 0.f, thrust_time = 1.5f,      //Time
       x = 0.f, y = 0.f,                                //Position
       vx = 0.f, vy = 0.f, v = 0.f,                     //Velocity
       ax, ay, a,                                       //Acceleration
@@ -100,10 +122,13 @@ float origin_x = 110.f, origin_y = 86.f,
       arrow_length_v, arrow_length_a,
       num_ticks_x, num_ticks_y;
 
+bool in_air, end_thrust, drag_on;
+
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-bool in_air, end_thrust;
+//Scale numbers
+
 std::vector<int> scales = {1, 2, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95,
                            100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950,
                            1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500, 7000, 7500, 8000, 8500, 9000, 9500,
@@ -120,10 +145,10 @@ RenderWindow window(VideoMode({1920, 1080}), "RTS", Style::Titlebar | Style::Clo
 
 //Text
 Font roboto;
-Font roboto_bold;
 Text standard_text(roboto);
 Text heading_text(roboto);
 Text tick_numbers_text(roboto);
+std::stringstream stf, srm, sfm, stt, sla;
 
 //Graph
 RectangleShape ticks({});
@@ -133,6 +158,14 @@ RectangleShape y_axis({5.f, -Y_AXIS_LENGTH - 5.f});
 //Rounded boxes function
 RectangleShape box({});
 CircleShape corner({});
+
+//Other lines
+RectangleShape seperator({740.f, 2.f});
+RectangleShape pm_seperator({});
+RectangleShape pm({});
+
+//Bounds used for calculating wheretext should go
+FloatRect bounds;
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -152,7 +185,8 @@ int main()
     standard_text.setCharacterSize(TEXT_SIZE);
     heading_text.setCharacterSize(HEADING_SIZE);
     heading_text.setFillColor(UI_BLUE);
-    
+    seperator.setFillColor(UI_GREY);
+    pm_seperator.setFillColor(UI_GREY);
     tick_numbers_text.setCharacterSize(20);
 
     //Axis positions
@@ -190,6 +224,15 @@ void menu()
 
 void simulator()
 {
+    //Make strings for control numbers
+    stf << std::fixed << std::setprecision(0) << force;
+    srm << std::fixed << std::setprecision(1) << mass_rocket;
+    sfm << std::fixed << std::setprecision(1) << mass_fuel;
+    stt << std::fixed << std::setprecision(1) << thrust_time;
+    sla << std::fixed << std::setprecision(0) << launch_angle * 180.f / PI;
+
+//----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    
     //Graph Ticks
     num_ticks_x = floor(X_AXIS_LENGTH / 50);
     num_ticks_y = floor(Y_AXIS_LENGTH / 50);
@@ -235,10 +278,6 @@ void simulator()
         
         //Draw Screen
         draw_UI();
-        draw_graph();
-        draw_path();
-        draw_state();
-        draw_arrows();
 
         //Display new
         window.display();
@@ -262,9 +301,6 @@ void simulator()
 
             //Draw Screen
             draw_UI();
-            draw_graph();
-            draw_path();
-            draw_state();
 
             //Display new
             window.display();
@@ -599,7 +635,7 @@ void draw_graph()
     }
 
     //Draw numbers
-    //Skip every other number if they are too cluttered
+    //Create constant to skip every other number if they are too cluttered
     int i = 1;
     int c = 1;
     if (50.f / pixels_per_meter * num_ticks_x >= 1000)
@@ -616,7 +652,7 @@ void draw_graph()
         tick_numbers_text.setString(tick_numbers.str());
 
         //Place in correct spot
-        FloatRect bounds = tick_numbers_text.getGlobalBounds();
+        bounds = tick_numbers_text.getGlobalBounds();
         tick_numbers_text.setPosition({origin_x + i * 50.f - bounds.size.x / 2.f - 3.f, 1103 - origin_y});
         window.draw(tick_numbers_text);
     
@@ -637,7 +673,7 @@ void draw_graph()
         tick_numbers_text.setString(tick_numbers.str());
 
         //Place in correct spot
-        FloatRect bounds = tick_numbers_text.getGlobalBounds();
+        bounds = tick_numbers_text.getGlobalBounds();
         tick_numbers_text.setPosition({origin_x - 50.f - bounds.size.x / 2, 1077 - origin_y - bounds.size.y / 2.f - 50.f * i});
         window.draw(tick_numbers_text);
     }
@@ -645,56 +681,165 @@ void draw_graph()
 
 void draw_UI()
 {
-    //Box two sections
-    rounded_box(20.f, 20.f, 1120.f, 1040.f, 20.f);
-    rounded_box(1160.f, 20.f, 740.f, 1040.f, 20.f);
+    //Box left and right sides
+    rounded_box(20.f, 20.f, 1120.f, 1040.f, 20.f, Color::Black, UI_GREY);
+    rounded_box(1160.f, 20.f, 740.f, 1040.f, 20.f, Color::Black, UI_GREY);
 
-    //Title sections
+    //Seperate right hand side sections
+    seperator.setPosition({1160.f, Y_STATUS + GAP_STATUS * 4 + TEXT_SIZE + 30.f});
+    window.draw(seperator);
+    seperator.setPosition({1160.f, Y_CONTROLS + GAP_CONTROL * 5 + TEXT_SIZE + 40.f});
+    window.draw(seperator);
+    seperator.setPosition({1160.f, Y_OPTIONS + GAP_OPTIONS + TEXT_SIZE + 40.f});
+    window.draw(seperator);
+
+    //LHS
+    draw_graph();
+    draw_path();
+    if ((y >= 0) && in_air)
+    {
+        draw_arrows();
+    }
+
+    //RHS
+    draw_status();
+    draw_controls();
+    draw_options();
+    draw_bottom_buttons();
+}
+
+void draw_status()
+{
+    //Title section
     heading_text.setString("STATUS");
-    heading_text.setPosition({X_STATUS_TEXT, 50.f});
+    heading_text.setPosition({X_TEXT, Y_STATUS - 60.f});
     window.draw(heading_text);
-
+    
     //Draw status labels
     standard_text.setString("Time:");
-    standard_text.setPosition({X_STATUS_TEXT, Y_STATUS});
+    standard_text.setPosition({X_TEXT, Y_STATUS});
     window.draw(standard_text);
     standard_text.setString("Distance:");
-    standard_text.setPosition({X_STATUS_TEXT, Y_STATUS + GAP_STATUS});
+    standard_text.setPosition({X_TEXT, Y_STATUS + GAP_STATUS});
     window.draw(standard_text);
     standard_text.setString("Height:");
-    standard_text.setPosition({X_STATUS_TEXT, Y_STATUS + GAP_STATUS * 2});
+    standard_text.setPosition({X_TEXT, Y_STATUS + GAP_STATUS * 2});
     window.draw(standard_text);
     standard_text.setString("Velocity:");
-    standard_text.setPosition({X_STATUS_TEXT, Y_STATUS + GAP_STATUS * 3});
+    standard_text.setPosition({X_TEXT, Y_STATUS + GAP_STATUS * 3});
     window.draw(standard_text);
     standard_text.setString("Acceleration:");
-    standard_text.setPosition({X_STATUS_TEXT, Y_STATUS + GAP_STATUS * 4});
+    standard_text.setPosition({X_TEXT, Y_STATUS + GAP_STATUS * 4});
+    window.draw(standard_text);
+
+    draw_state();
+}
+
+void draw_controls()
+{
+    //Title section
+    heading_text.setString("CONTROLS");
+    heading_text.setPosition({X_TEXT, Y_CONTROLS});
+    window.draw(heading_text);
+    
+    //Draw control labels
+    standard_text.setString("Thrust Force:");
+    standard_text.setPosition({X_TEXT, Y_CONTROLS + GAP_CONTROL});
+
+            //Get bounds of text for reference to make boxes later
+            bounds = standard_text.getGlobalBounds();
+            float y_for_control_boxes = bounds.position.y,
+                  height_for_control_boxes = bounds.size.y;
+
+    window.draw(standard_text);
+    standard_text.setString("Rocket Mass:");
+    standard_text.setPosition({X_TEXT, Y_CONTROLS + GAP_CONTROL * 2});
+    window.draw(standard_text);
+    standard_text.setString("Fuel Mass:");
+    standard_text.setPosition({X_TEXT, Y_CONTROLS + GAP_CONTROL * 3});
+    window.draw(standard_text);
+    standard_text.setString("Thrust Time:");
+    standard_text.setPosition({X_TEXT, Y_CONTROLS + GAP_CONTROL * 4});
+    window.draw(standard_text);
+    standard_text.setString("Launch Angle:");
+    standard_text.setPosition({X_TEXT, Y_CONTROLS + GAP_CONTROL * 5});
+    window.draw(standard_text);
+
+    //Draw boxes surrounding control numbers
+    for (int i = 0; i < 5; i++)
+    {
+        rounded_box(1440.f, y_for_control_boxes - 13.f + i * GAP_CONTROL, 170.f, height_for_control_boxes + 26.f, 8.f, Color::Black, UI_GREY);
+    }
+
+    //Draw plus minus buttons
+    for (int i = 0; i < 5; i++)
+    {
+        draw_plus_minus(1720.f, y_for_control_boxes - 13.f + i * GAP_CONTROL, 130, height_for_control_boxes + 26.f, 8.f);
+    }
+
+    //Draw control numbers
+    standard_text.setString(stf.str());
+    bounds = standard_text.getGlobalBounds();
+    standard_text.setPosition({1525.f - bounds.size.x / 2.f, Y_CONTROLS + GAP_CONTROL});
+    window.draw(standard_text);
+    standard_text.setString(srm.str());
+    bounds = standard_text.getGlobalBounds();
+    standard_text.setPosition({1525.f - bounds.size.x / 2.f, Y_CONTROLS + GAP_CONTROL * 2});
+    window.draw(standard_text);
+    standard_text.setString(sfm.str());
+    bounds = standard_text.getGlobalBounds();
+    standard_text.setPosition({1525.f - bounds.size.x / 2.f, Y_CONTROLS + GAP_CONTROL * 3});
+    window.draw(standard_text);
+    standard_text.setString(stt.str());
+    bounds = standard_text.getGlobalBounds();
+    standard_text.setPosition({1525.f - bounds.size.x / 2.f, Y_CONTROLS + GAP_CONTROL * 4});
+    window.draw(standard_text);
+    standard_text.setString(sla.str());
+    bounds = standard_text.getGlobalBounds();
+    standard_text.setPosition({1525.f - bounds.size.x / 2.f, Y_CONTROLS + GAP_CONTROL * 5});
+    window.draw(standard_text);
+
+    //Draw control number labels
+    standard_text.setString("N");
+    standard_text.setPosition({1630.f, Y_CONTROLS + GAP_CONTROL});
+    window.draw(standard_text);
+    standard_text.setString("kg");
+    standard_text.setPosition({1630.f, Y_CONTROLS + GAP_CONTROL * 2});
+    window.draw(standard_text);
+    standard_text.setString("kg");
+    standard_text.setPosition({1630.f, Y_CONTROLS + GAP_CONTROL * 3});
+    window.draw(standard_text);
+    standard_text.setString("s");
+    standard_text.setPosition({1630.f, Y_CONTROLS + GAP_CONTROL * 4});
+    window.draw(standard_text);
+    standard_text.setString(U'°');
+    standard_text.setPosition({1630.f, Y_CONTROLS + GAP_CONTROL * 5});
     window.draw(standard_text);
 }
 
-void rounded_box(float x_box, float y_box, float b_width, float b_height, float r_box)
+void draw_plus_minus(float x_box, float y_box, float b_width, float b_height, float r_box)
 {
         //Outline
     //Boxes
     box.setOutlineThickness(2.f);
-    box.setOutlineColor(BORDER);
+    box.setOutlineColor(UI_GREY);
 
     box.setSize({b_width - 2.f * r_box, b_height});
-    box.setPosition({x_box + r_box, 20.f});
+    box.setPosition({x_box + r_box, y_box});
     window.draw(box);
 
     box.setSize({b_width, b_height - 2.f * r_box});
-    box.setPosition({x_box, 20.f + r_box});
+    box.setPosition({x_box, y_box + r_box});
     window.draw(box);    
     
     //Corners
     corner.setOutlineThickness(2.f);
-    corner.setOutlineColor(BORDER);
+    corner.setOutlineColor(UI_GREY);
     corner.setRadius(r_box);
 
-    corner.setPosition({x_box, 20.f});
+    corner.setPosition({x_box, y_box});
     window.draw(corner);
-    corner.setPosition({x_box + b_width - 2.f * r_box, 20.f});
+    corner.setPosition({x_box + b_width - 2.f * r_box, y_box});
     window.draw(corner);
     corner.setPosition({x_box, y_box + b_height - 2.f * r_box});
     window.draw(corner);
@@ -704,24 +849,126 @@ void rounded_box(float x_box, float y_box, float b_width, float b_height, float 
         //Middle
     //Boxes
     box.setOutlineColor(Color::Transparent);
-    box.setFillColor(Color::Black);
+    box.setFillColor(PLUS_MINUS_GREY);
 
     box.setSize({b_width - 2.f * r_box, b_height});
-    box.setPosition({x_box + r_box, 20.f});
+    box.setPosition({x_box + r_box, y_box});
     window.draw(box);
 
     box.setSize({b_width, b_height - 2.f * r_box});
-    box.setPosition({x_box, 20.f + r_box});
+    box.setPosition({x_box, y_box + r_box});
     window.draw(box);    
 
     //Corners
     corner.setOutlineColor(Color::Transparent);
     corner.setRadius(r_box);
-    corner.setFillColor(Color::Black);
+    corner.setFillColor(PLUS_MINUS_GREY);
 
-    corner.setPosition({x_box, 20.f});
+    corner.setPosition({x_box, y_box});
     window.draw(corner);
-    corner.setPosition({x_box + b_width - 2.f * r_box, 20.f});
+    corner.setPosition({x_box + b_width - 2.f * r_box, y_box});
+    window.draw(corner);
+    corner.setPosition({x_box, y_box + b_height - 2.f * r_box});
+    window.draw(corner);
+    corner.setPosition({x_box + b_width - 2.f * r_box, y_box + b_height - 2.f * r_box});
+    window.draw(corner);
+
+    //Seperator
+    pm_seperator.setSize({2.f, b_height});
+    pm_seperator.setPosition({x_box + b_width / 2.f - 1.f, y_box});
+    window.draw(pm_seperator);
+
+    //Symbols
+    pm.setSize({22.f, 2.f});
+    pm.setPosition({x_box + b_width / 4.f - 11.f, y_box + b_height / 2.f - 1.f});
+    window.draw(pm);
+    pm.setPosition({x_box + b_width / 4.f * 3.f - 11.f, y_box + b_height / 2.f - 1.f});
+    window.draw(pm);
+    pm.setSize({2.f, 22.f});
+    pm.setPosition({x_box + b_width / 4.f * 3.f - 1.f, y_box + b_height / 2.f - 11.f});
+    window.draw(pm);
+}
+
+void draw_options()
+{
+    //Title section
+    heading_text.setString("OPTIONS");
+    heading_text.setPosition({X_TEXT, Y_OPTIONS});
+    window.draw(heading_text);
+
+    //Check box
+    rounded_box(X_TEXT + 5.f, Y_OPTIONS + GAP_OPTIONS + 3.f, 35.f, 35.f, 2.f, Color::Black, UI_BLUE);
+
+    //Words
+    standard_text.setString("Include Drag");
+    standard_text.setPosition({X_TEXT + 60.f, Y_OPTIONS + GAP_OPTIONS});
+    window.draw(standard_text);
+}
+
+void draw_bottom_buttons()
+{
+    //Draw box
+    rounded_box(X_TEXT, Y_BOTTOM_BUTTONS, 660.f, 90.f, 5.f, UI_BLUE, UI_BLUE);
+
+    //Draw launch
+    standard_text.setCharacterSize(60);
+    standard_text.setString("LAUNCH");
+    bounds = standard_text.getGlobalBounds();
+    standard_text.setPosition({X_TEXT + 330.f - bounds.size.x / 2.f, Y_BOTTOM_BUTTONS + 5.f});
+    window.draw(standard_text);
+    standard_text.setCharacterSize(TEXT_SIZE);
+}
+
+void rounded_box(float x_box, float y_box, float b_width, float b_height, float r_box, const Color& middle, const Color& border)
+{
+        //Outline
+    //Boxes
+    box.setOutlineThickness(2.f);
+    box.setOutlineColor(border);
+
+    box.setSize({b_width - 2.f * r_box, b_height});
+    box.setPosition({x_box + r_box, y_box});
+    window.draw(box);
+
+    box.setSize({b_width, b_height - 2.f * r_box});
+    box.setPosition({x_box, y_box + r_box});
+    window.draw(box);    
+    
+    //Corners
+    corner.setOutlineThickness(2.f);
+    corner.setOutlineColor(border);
+    corner.setRadius(r_box);
+
+    corner.setPosition({x_box, y_box});
+    window.draw(corner);
+    corner.setPosition({x_box + b_width - 2.f * r_box, y_box});
+    window.draw(corner);
+    corner.setPosition({x_box, y_box + b_height - 2.f * r_box});
+    window.draw(corner);
+    corner.setPosition({x_box + b_width - 2.f * r_box, y_box + b_height - 2.f * r_box});
+    window.draw(corner);
+
+        //Middle
+    //Boxes
+    box.setOutlineColor(Color::Transparent);
+    box.setFillColor(middle);
+
+    box.setSize({b_width - 2.f * r_box, b_height});
+    box.setPosition({x_box + r_box, y_box});
+    window.draw(box);
+
+    box.setSize({b_width, b_height - 2.f * r_box});
+    box.setPosition({x_box, y_box + r_box});
+    window.draw(box);    
+
+    //Corners
+    corner.setOutlineColor(Color::Transparent);
+    corner.setRadius(r_box);
+    corner.setFillColor(middle);
+
+    corner.setPosition({x_box, y_box});
+    window.draw(corner);
+    corner.setPosition({x_box + b_width - 2.f * r_box, y_box});
     window.draw(corner);
     corner.setPosition({x_box, y_box + b_height - 2.f * r_box});
     window.draw(corner);
@@ -741,23 +988,23 @@ void draw_state()
     sa << std::fixed << std::setprecision(2) << a;
 
     //Draw numbers
-    standard_text.setString(st.str());
-    FloatRect bounds = standard_text.getGlobalBounds();
+    standard_text.setString(st.str() + " s");
+    bounds = standard_text.getGlobalBounds();
     standard_text.setPosition({X_STATUS_NUMBERS - bounds.size.x, Y_STATUS});
     window.draw(standard_text);
-    standard_text.setString(sx.str());
+    standard_text.setString(sx.str() + " m");
     bounds = standard_text.getGlobalBounds();
     standard_text.setPosition({X_STATUS_NUMBERS - bounds.size.x, Y_STATUS + GAP_STATUS});
     window.draw(standard_text);
-    standard_text.setString(sy.str());
+    standard_text.setString(sy.str() + " m");
     bounds = standard_text.getGlobalBounds();
     standard_text.setPosition({X_STATUS_NUMBERS - bounds.size.x, Y_STATUS + GAP_STATUS * 2});
     window.draw(standard_text);
-    standard_text.setString(sv.str());
+    standard_text.setString(sv.str() + " m/s");
     bounds = standard_text.getGlobalBounds();
     standard_text.setPosition({X_STATUS_NUMBERS - bounds.size.x, Y_STATUS + GAP_STATUS * 3});
     window.draw(standard_text);
-    standard_text.setString(sa.str());
+    standard_text.setString(String(sa.str() + " m/s") + U'²');
     bounds = standard_text.getGlobalBounds();
     standard_text.setPosition({X_STATUS_NUMBERS - bounds.size.x, Y_STATUS + GAP_STATUS * 4});
     window.draw(standard_text);
