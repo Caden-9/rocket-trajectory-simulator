@@ -20,6 +20,10 @@ using namespace sf;
 void menu();
 void simulator();
 
+//Screen interaction
+void check_click_location(Vector2i position);
+void use_new_control_value(std::string new_control_value, int state);
+
 //Physics
 void get_drag();
 float acceleration_y(float t);
@@ -49,7 +53,7 @@ void draw_options();
 void draw_bottom_buttons();
 
 void draw_plus_minus(float x_box, float y_box, float b_width, float b_height, float r_box);
-void rounded_box(float x_box, float y_box, float b_width, float b_height, float r_box, const Color& middle, const Color& border);
+void rounded_box(float x_box, float y_box, float b_width, float b_height, float r_box, float thickness, const Color& middle, const Color& border);
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -94,11 +98,8 @@ float dt = 1.f/60.f, t = 0.f, thrust_time = 1.5f,      //Time
       x = 0.f, y = 0.f,                                //Position
       vx = 0.f, vy = 0.f, v = 0.f,                     //Velocity
       ax, ay, a,                                       //Acceleration
-
       force = 400, mass_rocket = 10, mass_fuel = 10,   //Rocket
-      m0 = mass_rocket + mass_fuel,
-      m1 = mass_rocket + mass_fuel,
-      fuel_per_second = mass_fuel / thrust_time,
+      m0, m1, fuel_per_second,
       launch_angle = 80 * PI / 180;                    //Angle
 
 //Constants used in calculations for after thrust time ends
@@ -106,9 +107,9 @@ float v_thrust_time_x, v_thrust_time_y,
       p_thrust_time_x, p_thrust_time_y;
 
 //Drag
-float a_drag_x = 0.f, a_drag_y = 0.f,
-      v_drag_x = 0.f, v_drag_y = 0.f,
-      p_drag_x = 0.f, p_drag_y = 0.f,
+float a_drag_x, a_drag_y,
+      v_drag_x, v_drag_y,
+      p_drag_x, p_drag_y,
       rho = 1.225f, Cd = 0.4f, r = 0.05f, area;
 
 //Variables for calculate_bounds function
@@ -122,18 +123,20 @@ float origin_x = 110.f, origin_y = 86.f,
       arrow_length_v, arrow_length_a,
       num_ticks_x, num_ticks_y;
 
-bool in_air, end_thrust, drag_on;
+bool in_air, end_thrust, drag_on = true, currently_typing = false;
+int control_typing_state;
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-//Scale numbers
+//Other
 
 std::vector<int> scales = {1, 2, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95,
                            100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 800, 850, 900, 950,
                            1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000, 6500, 7000, 7500, 8000, 8500, 9000, 9500,
                            10000};
 int num_scales;
+Clock cursor_clock;
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -148,6 +151,8 @@ Font roboto;
 Text standard_text(roboto);
 Text heading_text(roboto);
 Text tick_numbers_text(roboto);
+std::string current_control_text;
+std::string previous_control_text;
 std::stringstream stf, srm, sfm, stt, sla;
 
 //Graph
@@ -163,9 +168,12 @@ CircleShape corner({});
 RectangleShape seperator({740.f, 2.f});
 RectangleShape pm_seperator({});
 RectangleShape pm({});
+RectangleShape text_cursor({});
+RectangleShape drag_checkmark({});
 
-//Bounds used for calculating wheretext should go
+//Bounds used for calculating where text should go
 FloatRect bounds;
+float y_for_control_boxes, height_for_control_boxes;
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -192,6 +200,10 @@ int main()
     //Axis positions
     x_axis.setPosition({origin_x - 5.f, 1080.f - origin_y});
     y_axis.setPosition({origin_x - 5.f, 1085.f - origin_y});
+
+    //Arrow colors
+    v_arrow[0].color = v_arrow[1].color = Color::Cyan;
+    a_arrow[0].color = a_arrow[1].color = Color::Magenta;
 
     //Start simulator
     while(window.isOpen())
@@ -223,15 +235,22 @@ void menu()
 }
 
 void simulator()
-{
-    //Make strings for control numbers
-    stf << std::fixed << std::setprecision(0) << force;
-    srm << std::fixed << std::setprecision(1) << mass_rocket;
-    sfm << std::fixed << std::setprecision(1) << mass_fuel;
-    stt << std::fixed << std::setprecision(1) << thrust_time;
-    sla << std::fixed << std::setprecision(0) << launch_angle * 180.f / PI;
+{    
+    //Reset values
+    in_air = true;
+    end_thrust = true;
 
-//----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+    x = y = t =
+    a_drag_x = a_drag_y =
+    v_drag_x = v_drag_y =
+    p_drag_x = p_drag_y = 0.f;
+
+    fuel_per_second = mass_fuel / thrust_time;
+
+    m0 = mass_rocket + mass_fuel;
+    m1 = mass_rocket + mass_fuel;
+
+    path.clear();
     
     //Graph Ticks
     num_ticks_x = floor(X_AXIS_LENGTH / 50);
@@ -241,18 +260,8 @@ void simulator()
     calculate_bounds();
     get_scale();
 
-//----------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
     //Add origin to path line
     path.append(Vertex{{origin_x, 1080.f - origin_y}, Color::Green});
-
-    //Arrow colors
-    v_arrow[0].color = v_arrow[1].color = Color::Cyan;
-    a_arrow[0].color = a_arrow[1].color = Color::Magenta;
-
-    //Reset bools
-    in_air = true;
-    end_thrust = true;
 
     //Calculate frontal area for drag
     area = PI * r * r;
@@ -260,27 +269,84 @@ void simulator()
     //Simulator Loop
     while(window.isOpen())
     {
-        //Check if closed
+        //Check events
         while(const std::optional event = window.pollEvent())
         {
-            //Close with button
-            if (event->is<Event::Closed>())
+            //Close with button or escape
+            if (event->is<Event::Closed>()  || 
+               (event->is<Event::KeyPressed>() && event->getIf<Event::KeyPressed>()->code == Keyboard::Key::Escape))
+            {
                 window.close();
+            }
+
+            //Only check while not running simulation
+            if (!((y >= 0) && in_air))
+            {
+                //Mouse
+                if (const auto* mouseClick = event->getIf<Event::MouseButtonReleased>())
+                { 
+                    if (mouseClick->button == Mouse::Button::Left)
+                    {
+                        check_click_location(mouseClick->position);
+                    }
+                }
+
+                    /*Keyboard*/
+
+                //Text (numbers and ".")
+                const auto* text = event->getIf<Event::TextEntered>();
+                if (text && currently_typing)
+                {
+                    char c = static_cast<char>(text->unicode);
+
+                    //Typing numbers and decimals
+                    if ((c >= '0' && c <= '9') &&
+                        (((control_typing_state == 1) && current_control_text.size() < 6) ||
+                         ((control_typing_state == 2) && current_control_text.size() < 6) ||
+                         ((control_typing_state == 3) && current_control_text.size() < 7) ||
+                         ((control_typing_state == 4) && current_control_text.size() < 5) ||
+                         ((control_typing_state == 5) && current_control_text.size() < 4)) ||
+                        (c == '.' && current_control_text.find('.') == std::string::npos && (control_typing_state != 1)))
+                    {
+                        current_control_text += c;
+                    }
+                }
+
+                //Key (backspace and enter)
+                const auto* key = event->getIf<Event::KeyPressed>();
+                if (key && currently_typing)
+                {
+                    if (key->scancode == sf::Keyboard::Scancode::Backspace &&
+                        !current_control_text.empty())
+                    {
+                        current_control_text.pop_back();
+                    }
+
+                    if (key->scancode == sf::Keyboard::Scancode::Enter)
+                    {
+                        use_new_control_value(current_control_text, control_typing_state);
+                        control_typing_state = 0;
+                        currently_typing = false;
+                    }
+                }
+                
+            }
+
         }
 
         if ((y >= 0) && in_air)
         {
-        //Update position
-        update_numbers();
+            //Update position
+            update_numbers();
 
-        //Clear screen
-        window.clear(Color::Black);
-        
-        //Draw Screen
-        draw_UI();
+            //Clear screen
+            window.clear(Color::Black);
+            
+            //Draw Screen
+            draw_UI();
 
-        //Display new
-        window.display();
+            //Display new
+            window.display();
         }
         else //Stop and keep updating screen
         {
@@ -290,8 +356,13 @@ void simulator()
 
                 //Add final point to path instead of point with negative height
                 path.resize(path.getVertexCount() - 1);
+                if (!drag_on)
+                {
+                    x = distance_max;
+                    t = time_ground;
+                }
                 path.append(Vertex{{x * pixels_per_meter + origin_x, 1080.f - origin_y}, Color::Red});
-                
+
                 //Don't do this again
                 in_air = false;
             }
@@ -558,7 +629,10 @@ void update_numbers()
     }
 
     //Drag
-    get_drag();
+    if (drag_on)
+    {
+        get_drag();
+    }
 
     //Get current acceleration, velocity, and position
     ax = acceleration_x(t);
@@ -679,11 +753,13 @@ void draw_graph()
     }
 }
 
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
 void draw_UI()
 {
     //Box left and right sides
-    rounded_box(20.f, 20.f, 1120.f, 1040.f, 20.f, Color::Black, UI_GREY);
-    rounded_box(1160.f, 20.f, 740.f, 1040.f, 20.f, Color::Black, UI_GREY);
+    rounded_box(20.f, 20.f, 1120.f, 1040.f, 20.f, 2.f, Color::Black, UI_GREY);
+    rounded_box(1160.f, 20.f, 740.f, 1040.f, 20.f, 2.f, Color::Black, UI_GREY);
 
     //Seperate right hand side sections
     seperator.setPosition({1160.f, Y_STATUS + GAP_STATUS * 4 + TEXT_SIZE + 30.f});
@@ -748,8 +824,8 @@ void draw_controls()
 
             //Get bounds of text for reference to make boxes later
             bounds = standard_text.getGlobalBounds();
-            float y_for_control_boxes = bounds.position.y,
-                  height_for_control_boxes = bounds.size.y;
+            y_for_control_boxes = bounds.position.y;
+            height_for_control_boxes = bounds.size.y;
 
     window.draw(standard_text);
     standard_text.setString("Rocket Mass:");
@@ -768,7 +844,7 @@ void draw_controls()
     //Draw boxes surrounding control numbers
     for (int i = 0; i < 5; i++)
     {
-        rounded_box(1440.f, y_for_control_boxes - 13.f + i * GAP_CONTROL, 170.f, height_for_control_boxes + 26.f, 8.f, Color::Black, UI_GREY);
+        rounded_box(1440.f, y_for_control_boxes - 13.f + i * GAP_CONTROL, 170.f, height_for_control_boxes + 26.f, 8.f, 2.f, Color::Black, UI_GREY);
     }
 
     //Draw plus minus buttons
@@ -777,6 +853,18 @@ void draw_controls()
         draw_plus_minus(1720.f, y_for_control_boxes - 13.f + i * GAP_CONTROL, 130, height_for_control_boxes + 26.f, 8.f);
     }
 
+    //Make strings for control numbers
+    stf.str("");
+    srm.str("");
+    sfm.str("");
+    stt.str("");
+    sla.str("");
+    stf << std::fixed << std::setprecision(0) << force;
+    srm << std::fixed << std::setprecision(1) << mass_rocket;
+    sfm << std::fixed << std::setprecision(1) << mass_fuel;
+    stt << std::fixed << std::setprecision(1) << thrust_time;
+    sla << std::fixed << std::setprecision(1) << launch_angle * 180.f / PI;
+
     //Draw control numbers
     standard_text.setString(stf.str());
     bounds = standard_text.getGlobalBounds();
@@ -784,20 +872,102 @@ void draw_controls()
     window.draw(standard_text);
     standard_text.setString(srm.str());
     bounds = standard_text.getGlobalBounds();
-    standard_text.setPosition({1525.f - bounds.size.x / 2.f, Y_CONTROLS + GAP_CONTROL * 2});
+    standard_text.setPosition({1525.f - bounds.size.x / 2.f, Y_CONTROLS + GAP_CONTROL * 2.f});
     window.draw(standard_text);
     standard_text.setString(sfm.str());
     bounds = standard_text.getGlobalBounds();
-    standard_text.setPosition({1525.f - bounds.size.x / 2.f, Y_CONTROLS + GAP_CONTROL * 3});
+    standard_text.setPosition({1525.f - bounds.size.x / 2.f, Y_CONTROLS + GAP_CONTROL * 3.f});
     window.draw(standard_text);
     standard_text.setString(stt.str());
     bounds = standard_text.getGlobalBounds();
-    standard_text.setPosition({1525.f - bounds.size.x / 2.f, Y_CONTROLS + GAP_CONTROL * 4});
+    standard_text.setPosition({1525.f - bounds.size.x / 2.f, Y_CONTROLS + GAP_CONTROL * 4.f});
     window.draw(standard_text);
     standard_text.setString(sla.str());
     bounds = standard_text.getGlobalBounds();
-    standard_text.setPosition({1525.f - bounds.size.x / 2.f, Y_CONTROLS + GAP_CONTROL * 5});
+    standard_text.setPosition({1525.f - bounds.size.x / 2.f, Y_CONTROLS + GAP_CONTROL * 5.f});
     window.draw(standard_text);
+
+        //Draw control numbers in typing state
+    switch (control_typing_state)
+    {
+    case 1:
+        rounded_box(1440.f, y_for_control_boxes - 13.f, 170.f, height_for_control_boxes + 26.f, 8.f, 2.f, Color::Black, UI_GREY);
+        standard_text.setString(current_control_text);
+        bounds = standard_text.getGlobalBounds();
+        standard_text.setPosition({1525.f - bounds.size.x / 2.f, Y_CONTROLS + GAP_CONTROL});
+        window.draw(standard_text);
+
+        text_cursor.setPosition({1525.f + bounds.size.x / 2.f + 6.f, y_for_control_boxes - 5.f});
+        text_cursor.setSize({2.f, height_for_control_boxes + 10.f});
+        if (round(cursor_clock.getElapsedTime().asSeconds()) <= cursor_clock.getElapsedTime().asSeconds())
+        {
+            window.draw(text_cursor);
+        }
+        break;
+
+    case 2:
+        rounded_box(1440.f, y_for_control_boxes - 13.f + 1.f * GAP_CONTROL, 170.f, height_for_control_boxes + 26.f, 8.f, 2.f, Color::Black, UI_GREY);
+        standard_text.setString(current_control_text);
+        bounds = standard_text.getGlobalBounds();
+        standard_text.setPosition({1525.f - bounds.size.x / 2.f, Y_CONTROLS + GAP_CONTROL * 2.f});
+        window.draw(standard_text);
+
+        text_cursor.setPosition({1525.f + bounds.size.x / 2.f + 6.f, y_for_control_boxes - 5.f + GAP_CONTROL});
+        text_cursor.setSize({2.f, height_for_control_boxes + 10.f});
+        if (round(cursor_clock.getElapsedTime().asSeconds()) <= cursor_clock.getElapsedTime().asSeconds())
+        {
+            window.draw(text_cursor);
+        }
+        break;
+
+    case 3:
+        rounded_box(1440.f, y_for_control_boxes - 13.f + 2.f * GAP_CONTROL, 170.f, height_for_control_boxes + 26.f, 8.f, 2.f, Color::Black, UI_GREY);
+        standard_text.setString(current_control_text);
+        bounds = standard_text.getGlobalBounds();
+        standard_text.setPosition({1525.f - bounds.size.x / 2.f, Y_CONTROLS + GAP_CONTROL * 3.f});
+        window.draw(standard_text);
+
+        text_cursor.setPosition({1525.f + bounds.size.x / 2.f + 6.f, y_for_control_boxes - 5.f + 2.f * GAP_CONTROL});
+        text_cursor.setSize({2.f, height_for_control_boxes + 10.f});
+        if (round(cursor_clock.getElapsedTime().asSeconds()) <= cursor_clock.getElapsedTime().asSeconds())
+        {
+            window.draw(text_cursor);
+        }
+        break;
+
+    case 4:
+        rounded_box(1440.f, y_for_control_boxes - 13.f + 3.f * GAP_CONTROL, 170.f, height_for_control_boxes + 26.f, 8.f, 2.f, Color::Black, UI_GREY);
+        standard_text.setString(current_control_text);
+        bounds = standard_text.getGlobalBounds();
+        standard_text.setPosition({1525.f - bounds.size.x / 2.f, Y_CONTROLS + GAP_CONTROL * 4.f});
+        window.draw(standard_text);
+
+        text_cursor.setPosition({1525.f + bounds.size.x / 2.f + 6.f, y_for_control_boxes - 5.f + 3.f * GAP_CONTROL});
+        text_cursor.setSize({2.f, height_for_control_boxes + 10.f});
+        if (round(cursor_clock.getElapsedTime().asSeconds()) <= cursor_clock.getElapsedTime().asSeconds())
+        {
+            window.draw(text_cursor);
+        }
+        break;
+
+    case 5:
+        rounded_box(1440.f, y_for_control_boxes - 13.f + 4.f * GAP_CONTROL, 170.f, height_for_control_boxes + 26.f, 8.f, 2.f, Color::Black, UI_GREY);
+        standard_text.setString(current_control_text);
+        bounds = standard_text.getGlobalBounds();
+        standard_text.setPosition({1525.f - bounds.size.x / 2.f, Y_CONTROLS + GAP_CONTROL * 5.f});
+        window.draw(standard_text);
+
+        text_cursor.setPosition({1525.f + bounds.size.x / 2.f + 6.f, y_for_control_boxes - 5.f + 4.f * GAP_CONTROL});
+        text_cursor.setSize({2.f, height_for_control_boxes + 10.f});
+        if (round(cursor_clock.getElapsedTime().asSeconds()) <= cursor_clock.getElapsedTime().asSeconds())
+        {
+            window.draw(text_cursor);
+        }
+        break;
+    
+    default:
+        break;
+    }
 
     //Draw control number labels
     standard_text.setString("N");
@@ -897,7 +1067,23 @@ void draw_options()
     window.draw(heading_text);
 
     //Check box
-    rounded_box(X_TEXT + 5.f, Y_OPTIONS + GAP_OPTIONS + 3.f, 35.f, 35.f, 2.f, Color::Black, UI_BLUE);
+    if (drag_on)
+    {
+        rounded_box(X_TEXT + 5.f, Y_OPTIONS + GAP_OPTIONS + 3.f, 35.f, 35.f, 2.f, 3.f, Color::Black, UI_BLUE);
+        drag_checkmark.setFillColor(UI_BLUE);
+        drag_checkmark.setSize({3.f, 13.f});
+        drag_checkmark.setPosition({X_TEXT + 10.f, Y_OPTIONS + GAP_OPTIONS + 20.f});
+        drag_checkmark.setRotation(degrees(315.f));
+        window.draw(drag_checkmark);
+        drag_checkmark.setSize({4.f, 22.f});
+        drag_checkmark.setPosition({X_TEXT + 20.f, Y_OPTIONS + GAP_OPTIONS + 30.f});
+        drag_checkmark.setRotation(degrees(225.f));
+        window.draw(drag_checkmark);
+    }
+    else
+    {
+        rounded_box(X_TEXT + 5.f, Y_OPTIONS + GAP_OPTIONS + 3.f, 35.f, 35.f, 2.f, 3.f, Color::Black, UI_GREY);
+    }
 
     //Words
     standard_text.setString("Include Drag");
@@ -908,7 +1094,7 @@ void draw_options()
 void draw_bottom_buttons()
 {
     //Draw box
-    rounded_box(X_TEXT, Y_BOTTOM_BUTTONS, 660.f, 90.f, 5.f, UI_BLUE, UI_BLUE);
+    rounded_box(X_TEXT, Y_BOTTOM_BUTTONS, 660.f, 90.f, 5.f, 2.f, UI_BLUE, UI_BLUE);
 
     //Draw launch
     standard_text.setCharacterSize(60);
@@ -919,11 +1105,11 @@ void draw_bottom_buttons()
     standard_text.setCharacterSize(TEXT_SIZE);
 }
 
-void rounded_box(float x_box, float y_box, float b_width, float b_height, float r_box, const Color& middle, const Color& border)
+void rounded_box(float x_box, float y_box, float b_width, float b_height, float r_box, float thickness, const Color& middle, const Color& border)
 {
         //Outline
     //Boxes
-    box.setOutlineThickness(2.f);
+    box.setOutlineThickness(thickness);
     box.setOutlineColor(border);
 
     box.setSize({b_width - 2.f * r_box, b_height});
@@ -935,7 +1121,7 @@ void rounded_box(float x_box, float y_box, float b_width, float b_height, float 
     window.draw(box);    
     
     //Corners
-    corner.setOutlineThickness(2.f);
+    corner.setOutlineThickness(thickness);
     corner.setOutlineColor(border);
     corner.setRadius(r_box);
 
@@ -1008,4 +1194,295 @@ void draw_state()
     bounds = standard_text.getGlobalBounds();
     standard_text.setPosition({X_STATUS_NUMBERS - bounds.size.x, Y_STATUS + GAP_STATUS * 4});
     window.draw(standard_text);
+}
+
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+void check_click_location(Vector2i position)
+{
+    /*Plus minus buttons*/
+    
+        //Thrust Force
+    //Minus
+    if ((1720.f <= position.x) && (position.x <= 1785.f) &&
+        (y_for_control_boxes - 13.f <= position.y) && (position.y <= y_for_control_boxes - 13.f + height_for_control_boxes + 26.f))
+    {
+        if (force - 100.f >= 0.f)
+        {
+            force -= 100.f;
+        }
+        else
+        {
+            force = 0.f;
+        }
+    }
+
+    //Plus
+    if ((1785.f < position.x) && (position.x <= 1850.f) &&
+        (y_for_control_boxes - 13.f <= position.y) && (position.y <= y_for_control_boxes - 13.f + height_for_control_boxes + 26.f))
+    {
+        force += 100.f;
+    }
+
+        //Rocket Mass
+    //Minus
+    if ((1720.f <= position.x) && (position.x <= 1785.f) &&
+        (y_for_control_boxes - 13.f + GAP_CONTROL <= position.y) && (position.y <= y_for_control_boxes - 13.f + height_for_control_boxes + 26.f + GAP_CONTROL))
+    {
+        if (mass_rocket - 1.f >= 0.f)
+        {
+            mass_rocket -= 1.f;
+        }
+        else
+        {
+            mass_rocket = 0.f;
+        }
+    }
+
+    //Plus
+    if ((1785.f < position.x) && (position.x <= 1850.f) &&
+        (y_for_control_boxes - 13.f + GAP_CONTROL <= position.y) && (position.y <= y_for_control_boxes - 13.f + height_for_control_boxes + 26.f + GAP_CONTROL))
+    {
+        mass_rocket += 1.f;
+    }
+
+        //Fuel Mass
+    //Minus
+    if ((1720.f <= position.x) && (position.x <= 1785.f) &&
+        (y_for_control_boxes - 13.f + 2.f * GAP_CONTROL <= position.y) && (position.y <= y_for_control_boxes - 13.f + height_for_control_boxes + 26.f + 2.f * GAP_CONTROL))
+    {
+        if (mass_fuel - 1.f >= 0.f)
+        {
+            mass_fuel -= 1.f;
+        }
+        else
+        {
+            mass_fuel = 0.f;
+        }
+    }
+
+    //Plus
+    if ((1785.f < position.x) && (position.x <= 1850.f) &&
+        (y_for_control_boxes - 13.f + 2.f * GAP_CONTROL <= position.y) && (position.y <= y_for_control_boxes - 13.f + height_for_control_boxes + 26.f + 2.f * GAP_CONTROL))
+    {
+        mass_fuel += 1.f;
+    }
+
+        //Thrust Time
+    //Minus
+    if ((1720.f <= position.x) && (position.x <= 1785.f) &&
+        (y_for_control_boxes - 13.f + 3.f * GAP_CONTROL <= position.y) && (position.y <= y_for_control_boxes - 13.f + height_for_control_boxes + 26.f + 3.f * GAP_CONTROL))
+    {
+        if (thrust_time - 0.5f >= 0.f)
+        {
+            thrust_time -= 0.5f;
+        }
+        else
+        {
+            thrust_time = 0.f;
+        }
+    }
+
+    //Plus
+    if ((1785.f < position.x) && (position.x <= 1850.f) &&
+        (y_for_control_boxes - 13.f + 3.f * GAP_CONTROL <= position.y) && (position.y <= y_for_control_boxes - 13.f + height_for_control_boxes + 26.f + 3.f * GAP_CONTROL))
+    {
+        thrust_time += 0.5f;
+    }
+
+        //Launch Angle
+    //Minus
+    if ((1720.f <= position.x) && (position.x <= 1785.f) &&
+        (y_for_control_boxes - 13.f + 4.f * GAP_CONTROL <= position.y) && (position.y <= y_for_control_boxes - 13.f + height_for_control_boxes + 26.f + 4.f * GAP_CONTROL))
+    {
+        if (launch_angle - 5.f * PI / 180.f >= 0.f)
+        {
+            launch_angle -= 5.f * PI / 180.f;
+        }
+        else
+        {
+            launch_angle = 0.f;
+        }
+    }
+
+    //Plus
+    if ((1785.f < position.x) && (position.x <= 1850.f) &&
+        (y_for_control_boxes - 13.f + 4.f * GAP_CONTROL <= position.y) && (position.y <= y_for_control_boxes - 13.f + height_for_control_boxes + 26.f + 4.f * GAP_CONTROL))
+    {
+        launch_angle += 5.f * PI / 180.f;
+    }
+
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+    /*Controls typing*/
+    bool in_box = false;
+    int old_control_typing_state = control_typing_state;
+    previous_control_text = current_control_text;
+
+    //Thrust Force
+    if ((1440.f <= position.x) && (position.x <= 1610.f) &&
+        (y_for_control_boxes - 13.f <= position.y) && (position.y <= y_for_control_boxes - 13.f + height_for_control_boxes + 26.f))
+    {
+        control_typing_state = 1;
+        currently_typing = true;
+        in_box = true;
+        current_control_text = stf.str();
+        cursor_clock.restart();
+    }
+
+    //Rocket Mass
+    if ((1440.f <= position.x) && (position.x <= 1610.f) &&
+        (y_for_control_boxes - 13.f + GAP_CONTROL <= position.y) && (position.y <= y_for_control_boxes - 13.f + GAP_CONTROL + height_for_control_boxes + 26.f))
+    {
+        control_typing_state = 2;
+        currently_typing = true;
+        in_box = true;
+        current_control_text = srm.str();
+        cursor_clock.restart();
+    }
+
+    //Fuel Mass
+    if ((1440.f <= position.x) && (position.x <= 1610.f) &&
+        (y_for_control_boxes - 13.f + 2.f * GAP_CONTROL <= position.y) && (position.y <= y_for_control_boxes - 13.f + 2.f * GAP_CONTROL + height_for_control_boxes + 26.f))
+    {
+        control_typing_state = 3;
+        currently_typing = true;
+        in_box = true;
+        current_control_text = sfm.str();
+        cursor_clock.restart();
+    }
+
+    //Thrust Time
+    if ((1440.f <= position.x) && (position.x <= 1610.f) &&
+        (y_for_control_boxes - 13.f + 3.f * GAP_CONTROL <= position.y) && (position.y <= y_for_control_boxes - 13.f + 3.f * GAP_CONTROL + height_for_control_boxes + 26.f))
+    {
+        control_typing_state = 4;
+        currently_typing = true;
+        in_box = true;
+        current_control_text = stt.str();
+        cursor_clock.restart();
+    }
+
+    //Launch Angle
+    if ((1440.f <= position.x) && (position.x <= 1610.f) &&
+        (y_for_control_boxes - 13.f + 4.f * GAP_CONTROL <= position.y) && (position.y <= y_for_control_boxes - 13.f + 4.f * GAP_CONTROL + height_for_control_boxes + 26.f))
+    {
+        control_typing_state = 5;
+        currently_typing = true;
+        in_box = true;
+        current_control_text = sla.str();
+        cursor_clock.restart();
+    }
+
+    //If click out of typing box, save value
+    if (!in_box && currently_typing)
+    {
+        use_new_control_value(current_control_text, control_typing_state);
+        control_typing_state = 0;
+        currently_typing = false;
+        current_control_text = "";
+    }
+
+    //If click into different box, save value for previous box
+    if ((old_control_typing_state != control_typing_state) && (old_control_typing_state != 0))
+    {
+        use_new_control_value(previous_control_text, old_control_typing_state);
+    }
+
+
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+    //Drag
+    if ((X_TEXT + 5.f <= position.x) && (position.x <= X_TEXT + 40.f) &&
+        (Y_OPTIONS + GAP_OPTIONS + 3.f <= position.y) && (position.y <= Y_OPTIONS + GAP_OPTIONS + 38.f))
+        {
+            drag_on = !drag_on;
+        }
+
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
+    //Launch
+    if ((X_TEXT <= position.x) && (position.x <= X_TEXT + 660.f) &&
+        (Y_BOTTOM_BUTTONS <= position.y) && (position.y <= Y_BOTTOM_BUTTONS + 90.f))
+    {
+        //Run simulator again
+        simulator();
+    }
+}
+
+void use_new_control_value(std::string new_control_value, int state)
+{   
+    if (!new_control_value.empty() && new_control_value != ".")
+    {
+        switch (state)
+            {
+            case 1:
+                if ((force = std::stof(new_control_value)) > 100000.f)
+                {
+                    force = 100000.f;
+                }
+                break;
+
+            case 2:
+                if ((mass_rocket = std::stof(new_control_value)) > 5000.f)
+                {
+                    mass_rocket = 5000.f;
+                }
+                break;
+            
+            case 3:
+                if ((mass_fuel = std::stof(new_control_value)) > 10000.f)
+                {
+                    mass_fuel = 10000.f;
+                }
+                break;
+            
+            case 4:
+                if ((thrust_time = std::stof(new_control_value)) > 120.f)
+                {
+                    thrust_time = 120.f;
+                }
+                break;
+            
+            case 5:
+                if ((launch_angle = std::stof(new_control_value) * PI / 180.f) > PI / 2.f)
+                {
+                    launch_angle = 90.f * PI / 180.f;
+                }
+                break;
+            
+            default:
+                break;
+            }
+    }
+
+    else
+    {
+        switch (state)
+            {
+            case 1:
+                force = 0.f;
+                break;
+
+            case 2:
+                mass_rocket = 0.f;
+                break;
+            
+            case 3:
+                mass_fuel = 0.f;
+                break;
+            
+            case 4:
+                thrust_time = 0.f;
+                break;
+            
+            case 5:
+                launch_angle = 0.f;
+                break;
+            
+            default:
+                break;
+            }
+    }
 }
