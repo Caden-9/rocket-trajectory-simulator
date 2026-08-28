@@ -37,7 +37,8 @@ void calculate_bounds();
 void get_scale();
 void update_numbers();
 
-/*Screen*/
+/*Simulator screen*/
+void draw_simulator_UI();
 
 //LHS
 void draw_graph();
@@ -45,7 +46,6 @@ void draw_path();
 void draw_arrows();
 
 //RHS
-void draw_UI();
 void draw_status();
 void draw_state();
 void draw_controls();
@@ -54,6 +54,9 @@ void draw_bottom_buttons();
 
 void draw_plus_minus(float x_box, float y_box, float b_width, float b_height, float r_box);
 void rounded_box(float x_box, float y_box, float b_width, float b_height, float r_box, float thickness, const Color& middle, const Color& border);
+
+/*Menu screen*/
+void draw_menu_UI();
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
@@ -97,6 +100,8 @@ Vertex v_arrow[2], a_arrow[2];
 float dt = 1.f/60.f, t = 0.f, thrust_time = 1.5f,      //Time
       x = 0.f, y = 0.f,                                //Position
       vx = 0.f, vy = 0.f, v = 0.f,                     //Velocity
+      vx_estimate = 0.f, vy_estimate = 0.f,            //Velocity estimates for drag
+      v_estimate = 0.f,
       ax, ay, a,                                       //Acceleration
       force = 400, mass_rocket = 10, mass_fuel = 10,   //Rocket
       m0, m1, fuel_per_second,
@@ -176,7 +181,6 @@ FloatRect bounds;
 float y_for_control_boxes, height_for_control_boxes;
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 int main()
 {
@@ -214,6 +218,9 @@ int main()
     return 0;
 }
 
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+
 void menu()
 {
     while (const std::optional event = window.pollEvent()) //Look for events
@@ -232,7 +239,20 @@ void menu()
             }
         }
     }
+
+    //Draw menu
+    draw_menu_UI();
 }
+
+void draw_menu_UI()
+{
+    window.clear(Color::Black);
+    rounded_box(20.f, 20.f, 1880.f, 1040.f, 20.f, 2.f, Color::Black, UI_GREY);
+    window.display();
+}
+
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 void simulator()
 {    
@@ -343,7 +363,7 @@ void simulator()
             window.clear(Color::Black);
             
             //Draw Screen
-            draw_UI();
+            draw_simulator_UI();
 
             //Display new
             window.display();
@@ -371,7 +391,7 @@ void simulator()
             window.clear(Color::Black);
 
             //Draw Screen
-            draw_UI();
+            draw_simulator_UI();
 
             //Display new
             window.display();
@@ -380,15 +400,17 @@ void simulator()
 }
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 void get_drag()
 {  
     //Estimate current velocity
+    vx_estimate = vx + ax * dt;
+    vy_estimate = vy + ay * dt;
+    v_estimate = sqrt(vx_estimate * vx_estimate + vy_estimate * vy_estimate);
 
-    //Calculate acceleration due to drag in x and y directions (currently uses previous velocity)
-    a_drag_x = - 0.5f * rho * v * vx * Cd * area / m1;
-    a_drag_y = - 0.5f * rho * v * vy * Cd * area / m1;
+    //Calculate acceleration due to drag (already split into x and y directions by multiplying by vx/v or vy/v)
+    a_drag_x = - 0.5f * rho * v_estimate * vx_estimate * Cd * area / m1;
+    a_drag_y = - 0.5f * rho * v_estimate * vy_estimate * Cd * area / m1;
 
     //Reset position and velocity due to drag to zero at end of thrust (for calculations)
     if (t > thrust_time)
@@ -420,9 +442,6 @@ void get_drag()
     //Change in position due to velocity from drag
     p_drag_x += v_drag_x * dt;
     p_drag_y += v_drag_y * dt;
-
-    //Test
-    //std::cout << a_drag_x << std::endl << a_drag_y << std::endl << std::endl << v_drag_x << std::endl << v_drag_y << std::endl << std::endl << p_drag_x << std::endl << p_drag_y << std::endl << std::endl;
 }
 
 float acceleration_y(float t)
@@ -542,7 +561,6 @@ float position_x(float t)
 }
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 void calculate_bounds()   //This function estimates the max height and distance of the rocket without considering drag
 {
@@ -650,7 +668,6 @@ void update_numbers()
 }
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 void draw_path()
 {
@@ -755,7 +772,7 @@ void draw_graph()
 
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
-void draw_UI()
+void draw_simulator_UI()
 {
     //Box left and right sides
     rounded_box(20.f, 20.f, 1120.f, 1040.f, 20.f, 2.f, Color::Black, UI_GREY);
@@ -1196,7 +1213,6 @@ void draw_state()
     window.draw(standard_text);
 }
 
-/*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 /*--------------------------------------------------------------------------------------------------------------------------------------------------------------------*/
 
 void check_click_location(Vector2i position)
